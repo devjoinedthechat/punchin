@@ -1,4 +1,8 @@
-"""punchin: fork a recorded voice-agent call at the turn it went wrong."""
+"""punchin: fork a recorded voice-agent call at the turn it went wrong.
+
+Exit codes: 0 success, 1 the run said no (a regression, a fork that did not fix it, a bad flag),
+2 something it needed was missing, 130 interrupted.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from punchin import __version__
-from punchin.adapter import CommandAgent
+from punchin.adapter import AgentProtocolError, CommandAgent
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
 from punchin.check import baseline_from, compare, load_baseline, report
@@ -43,6 +47,13 @@ def add_audio_flags(parser: argparse.ArgumentParser) -> None:
 def agent_for(args: argparse.Namespace) -> Agent:
     """The agent under test. `command` is the one that matters: anybody else's."""
     name = args.agent
+    if getattr(args, "system_suffix", "") and name != "claude-code":
+        # A fork's report names the change it applied. Accepting a prompt change for an agent that
+        # cannot take one would make the report a lie about a run that tested nothing.
+        raise SystemExit(
+            f"--system-suffix has no effect on --agent {name}; it is a prompt change, and only "
+            f"--agent claude-code takes one. Change your own agent and pass --agent command instead."
+        )
     if name == "careful":
         return ScriptedAgent(careful=True)
     if name == "careless":
@@ -187,11 +198,11 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 
 
 def cmd_fork(args: argparse.Namespace) -> int:
+    agent = agent_for(args)  # before any file is read, so a bad flag fails in a millisecond
     call = Call.load(Path(args.call))
     scenario = BY_ID[call.scenario]
     model = model_for(args)
     goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
-    agent = agent_for(args)
     changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"agent {agent.name}"
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -364,8 +375,13 @@ def main(argv: list[str] | None = None) -> int:
         print("interrupted", file=sys.stderr)
         return 130
     except (ModelDidNotRun, FileNotFoundError) as stopped:
+        # Something the run needed was not there. Exit 2, the way a shell tool says "bad input".
         print(f"punchin: {stopped}", file=sys.stderr)
         return 2
+    except (ValueError, AgentProtocolError) as wrong:
+        # A mistake in what was asked for, not a bug. A traceback would only bury the sentence.
+        print(f"punchin: {wrong}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

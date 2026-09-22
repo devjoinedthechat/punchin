@@ -22,6 +22,7 @@
 <p align="center">
   <a href="#try-it">Try it</a> ·
   <a href="#why-this-is-hard">Why this is hard</a> ·
+  <a href="#your-agent-not-this-one">Your agent</a> ·
   <a href="#as-a-gate">As a gate</a> ·
   <a href="#hearing-it">Player</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
@@ -168,6 +169,30 @@ punchin player <before> <after> --out call.html
 Turns served from the recording are dimmed and the fork point is marked, so it is obvious which part of
 the second call is the change and which part is the same conversation. Where a recogniser sat between
 the customer and the agent, both lines are shown: what she said, and under it what arrived.
+
+## Your agent, not this one
+
+punchin's own agents exist to show what it does. `--agent command` runs anybody else's: one turn at a
+time, a JSON request on stdin and a JSON reply on stdout.
+
+```sh
+punchin record --agent command --agent-command "python my_agent.py"
+```
+
+```jsonc
+// in
+{"protocol":1,"today":"2026-09-28","lead":{…},"tools":{"mcp":{…}},"conversation":[{"speaker","text"}]}
+// out
+{"text":"Må jeg få nummerpladen på bilen?"}
+```
+
+`text` is the only field an agent has to produce. It is never asked what tools it called: punchin reads
+the dealership system's log before and after the turn, so the calls on the recording are the ones that
+really happened. And `conversation` is what the agent *heard* — where a recogniser sat in the middle,
+the mangled version, with the truth kept back as the answer key.
+
+[docs/protocol.md](docs/protocol.md) is the full contract and
+[examples/rule_agent.py](examples/rule_agent.py) a working implementation, both exercised in CI.
 
 ## As a gate
 
