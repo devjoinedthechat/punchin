@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 
@@ -93,8 +94,18 @@ class Call(BaseModel):
         return sum(t.cost_usd for t in self.turns)
 
     def save(self, directory: Path) -> Path:
+        """Write the recording. Re-saving the same call is fine; landing on another one is not."""
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{self.id}.json"
+        if path.exists():
+            there = json.loads(path.read_text())
+            # Parsed, not compared as text: pydantic writes "Z" where isoformat writes "+00:00", and
+            # comparing the strings would call every recording different from itself.
+            if _moment(there.get("started_at")) != self.started_at:
+                raise FileExistsError(
+                    f"{path} already holds a different call recorded at {there.get('started_at')}; "
+                    f"refusing to overwrite it"
+                )
         path.write_text(self.model_dump_json(indent=2))
         return path
 
@@ -110,9 +121,26 @@ class Call(BaseModel):
         return cls.model_validate(raw)
 
 
+def _moment(raw: object) -> dt.datetime | None:
+    if not isinstance(raw, str):
+        return None
+    try:
+        return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def call_id(scenario: str, agent: str, at: dt.datetime) -> str:
+    """A name that sorts by time and does not collide.
+
+    The random part is not decoration. Recording the same scenario several times — which a gate must
+    do, because the agent is sampled — finishes several calls inside one second, and a name without it
+    silently overwrites the earlier ones: `--repeat 3` quietly doing one. Two bytes was not enough
+    either; thirty calls collided. `save` refuses to clobber as well, because entropy lowers the odds
+    of losing a recording and only a check removes them.
+    """
     safe = re.sub(r"[^a-z0-9]+", "-", agent.lower()).strip("-")
-    return f"{at:%Y%m%d-%H%M%S}-{scenario}-{safe}"
+    return f"{at:%Y%m%d-%H%M%S}-{secrets.token_hex(4)}-{scenario}-{safe}"
 
 
 def load_all(directory: Path) -> list[Call]:

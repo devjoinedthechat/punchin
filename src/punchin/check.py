@@ -1,19 +1,29 @@
 """Compare a run against a recorded baseline, and fail when it got worse.
 
-The rest of punchin finds out what a change did. This is what you put in front of a deploy: it takes
-the numbers a run produced, holds them against the numbers the last good run produced, and names every
-scenario that moved the wrong way. Nothing here calls a model; it works on recordings.
+The rest of punchin finds out what a change did. This is what you put in front of a deploy.
+
+It takes more than one sample per scenario, and that is the whole design. An agent is sampled, so a
+scenario that passes four times in five will fail a single-sample gate one build in five, and the
+rational response to that is to re-run CI until it is green — which is the same as having no gate. A
+baseline here records how often a scenario came out right, not whether it did once, and a regression is
+a rate that fell, not a coin that landed differently.
+
+A scenario that disagrees with itself inside one run is reported as flaky rather than as passing or
+failing. For a voice agent that is a finding, not a nuisance: it means the outcome a customer gets
+depends on the sampler.
 """
 
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Any, Literal
 
-FORMAT = 1
+FORMAT = 2
 Direction = Literal["higher_is_worse", "lower_is_worse", "must_stay_true"]
 
 
@@ -24,14 +34,13 @@ class Rule:
     slack: float = 0.0
     why: str = ""
 
-    def broken(self, was: Any, now: Any) -> str | None:
-        """What went wrong, or None. A metric absent from either run is not a regression."""
+    def broken(self, was: float | None, now: float | None) -> str | None:
+        """What went wrong, or None. A metric absent from either side is not a regression."""
         if was is None or now is None:
             return None
         if self.direction == "must_stay_true":
-            return f"{self.key}: was true, now false" if bool(was) and not bool(now) else None
-        if not isinstance(was, int | float) or not isinstance(now, int | float):
-            return None
+            # Both are rates now. Falling from "always" to "usually" is a regression too.
+            return f"{self.key}: {was:.0%} -> {now:.0%} of runs" if now < was - 1e-9 else None
         if self.direction == "higher_is_worse" and now > was + self.slack:
             return f"{self.key}: {_n(was)} -> {_n(now)}"
         if self.direction == "lower_is_worse" and now < was - self.slack:
@@ -39,8 +48,8 @@ class Rule:
         return None
 
 
-def _n(value: Any) -> str:
-    return f"{value:g}" if isinstance(value, float) else str(value)
+def _n(value: float) -> str:
+    return f"{value:g}"
 
 
 RULES: tuple[Rule, ...] = (
@@ -54,6 +63,7 @@ RULES: tuple[Rule, ...] = (
     Rule("turns", "higher_is_worse", slack=2, why="how long the call took to get there"),
     Rule("lookup_attempts", "higher_is_worse", slack=1, why="tries needed to find the car"),
 )
+BOOLEAN = {rule.key for rule in RULES if rule.direction == "must_stay_true"}
 
 
 @dataclass
@@ -62,23 +72,67 @@ class Regression:
     detail: str
 
 
+@dataclass
+class Flaky:
+    scenario: str
+    passed: int
+    trials: int
+
+    def __str__(self) -> str:
+        return f"{self.scenario}: came out right in {self.passed} of {self.trials} runs"
+
+
+def _aggregate(rows: Sequence[dict[str, Any]], key: str) -> float | None:
+    """A rate for something that is true or false, a median for a number."""
+    seen = [row[key] for row in rows if row.get(key) is not None]
+    if not seen:
+        return None
+    if key in BOOLEAN:
+        return sum(bool(value) for value in seen) / len(seen)
+    numbers = [float(value) for value in seen if isinstance(value, int | float)]
+    return median(numbers) if numbers else None
+
+
+def by_scenario(rows: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row["scenario"])].append(row)
+    return dict(grouped)
+
+
 def baseline_from(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """The numbers to hold a later run against, keyed by scenario."""
-    kept = {rule.key for rule in RULES}
+    """What a later run is held against: one aggregate per metric, and how many runs it rests on."""
     return {
         "format": FORMAT,
-        "scenarios": {str(row["scenario"]): {k: v for k, v in row.items() if k in kept} for row in rows},
+        "scenarios": {
+            scenario: {
+                "trials": len(group),
+                **{rule.key: value for rule in RULES if (value := _aggregate(group, rule.key)) is not None},
+            }
+            for scenario, group in sorted(by_scenario(rows).items())
+        },
     }
 
 
 def load_baseline(path: Path) -> dict[str, Any]:
     stored: dict[str, Any] = json.loads(path.read_text())
-    if stored.get("format") != FORMAT:
+    written = stored.get("format")
+    if written != FORMAT:
         raise ValueError(
-            f"{path} was written by a different version of punchin (format {stored.get('format')}, "
-            f"this is {FORMAT}); record it again with `punchin check --update`"
+            f"{path} was written by a different version of punchin (baseline format {written}, this "
+            f"is {FORMAT}); record it again with `punchin check --update`"
         )
     return stored
+
+
+def flaky(rows: Sequence[dict[str, Any]], key: str = "correct") -> list[Flaky]:
+    """Scenarios that disagreed with themselves inside this run."""
+    found = []
+    for scenario, group in sorted(by_scenario(rows).items()):
+        verdicts = [bool(row.get(key)) for row in group if row.get(key) is not None]
+        if len(verdicts) > 1 and 0 < sum(verdicts) < len(verdicts):
+            found.append(Flaky(scenario, sum(verdicts), len(verdicts)))
+    return found
 
 
 def compare(
@@ -86,28 +140,56 @@ def compare(
 ) -> list[Regression]:
     """Every way this run is worse than the baseline, scenario by scenario."""
     known = baseline.get("scenarios", {})
-    found: list[Regression] = []
-    seen = set()
-    for row in rows:
-        scenario = str(row["scenario"])
-        seen.add(scenario)
-        was = known.get(scenario)
-        if was is None:
-            continue  # a new scenario has nothing to be worse than
-        found.extend(
-            Regression(scenario, broke)
-            for rule in rules
-            if (broke := rule.broken(was.get(rule.key), row.get(rule.key))) is not None
-        )
+    grouped = by_scenario(rows)
+    found: list[Regression] = [
+        Regression(scenario, broke)
+        for scenario, group in sorted(grouped.items())
+        if (was := known.get(scenario)) is not None
+        for rule in rules
+        if (broke := rule.broken(was.get(rule.key), _aggregate(group, rule.key))) is not None
+    ]
     found.extend(
-        Regression(missing, "in the baseline, not in this run") for missing in sorted(known.keys() - seen)
+        Regression(missing, "in the baseline, not in this run")
+        for missing in sorted(known.keys() - grouped.keys())
     )
     return found
 
 
+@dataclass
+class Checked:
+    regressions: list[Regression]
+    flaky: list[Flaky] = field(default_factory=list)
+    scenarios: int = 0
+    trials: int = 0
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.regressions)
+
+    def text(self) -> str:
+        runs = f"{self.trials} run{'s' if self.trials != 1 else ''} of {self.scenarios} scenarios"
+        lines = []
+        if self.regressions:
+            lines.append(f"{len(self.regressions)} regressions across {runs}")
+            lines.extend(f"  {found.scenario:18} {found.detail}" for found in self.regressions)
+        else:
+            lines.append(f"no regressions across {runs}")
+        if self.flaky:
+            lines.append(
+                f"\n{len(self.flaky)} scenarios disagreed with themselves — the outcome a customer "
+                f"gets depends on the sampler:"
+            )
+            lines.extend(f"  {found}" for found in self.flaky)
+        elif self.trials > self.scenarios:
+            lines.append("  every scenario agreed with itself across runs")
+        return "\n".join(lines)
+
+
+def check(rows: Sequence[dict[str, Any]], baseline: dict[str, Any]) -> Checked:
+    grouped = by_scenario(rows)
+    return Checked(compare(rows, baseline), flaky(rows), len(grouped), len(rows))
+
+
 def report(found: Sequence[Regression], total: int) -> str:
-    if not found:
-        return f"no regressions across {total} scenarios"
-    lines = [f"{len(found)} regressions across {total} scenarios"]
-    lines.extend(f"  {found_one.scenario:18} {found_one.detail}" for found_one in found)
-    return "\n".join(lines)
+    """Kept for callers that only want the regression lines."""
+    return Checked(list(found), scenarios=total, trials=total).text()

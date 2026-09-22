@@ -19,7 +19,7 @@ from punchin import __version__
 from punchin.adapter import AgentProtocolError, CommandAgent
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
-from punchin.check import baseline_from, compare, load_baseline, report
+from punchin.check import baseline_from, by_scenario, check, load_baseline
 from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, normalize_reg, serve
 from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
@@ -135,11 +135,12 @@ def cmd_record(args: argparse.Namespace) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     state = out / ".dms-state.json"
-    for scenario in chosen:
-        agent = agent_for(args)
-        call = record(scenario, agent, customer_for(args, scenario, out), state, out)
-        print(show(call))
-        print()
+    for _ in range(max(1, args.repeat)):
+        for scenario in chosen:
+            agent = agent_for(args)
+            call = record(scenario, agent, customer_for(args, scenario, out), state, out)
+            print(show(call))
+            print()
     state.unlink(missing_ok=True)
     return 0
 
@@ -275,17 +276,42 @@ def cmd_check(args: argparse.Namespace) -> int:
     calls = [Call.load(Path(path)) for path in args.call]
     known = known_scenarios(args)
     rows = [summarize(call, truth_for(known, call, args)) for call in calls]
+    scenarios = len(by_scenario(rows))
     baseline_path = Path(args.baseline)
+
     if args.update:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_path.write_text(json.dumps(baseline_from(rows), indent=2, sort_keys=True) + "\n")
-        print(f"baseline written from {len(rows)} scenarios: {baseline_path}")
+        runs = len(rows) // scenarios if scenarios else 0
+        print(f"baseline written from {scenarios} scenarios, {runs} run(s) each: {baseline_path}")
+        if runs < 2:
+            print(
+                "  One run each. An agent that is sampled needs more, or this baseline records a "
+                "coin toss as if it were a rule."
+            )
         return 0
+
     if not baseline_path.exists():
         raise SystemExit(f"no baseline at {baseline_path}; write one with `punchin check --update`")
-    found = compare(rows, load_baseline(baseline_path))
-    print(report(found, len(rows)))
-    return 1 if found else 0
+    found = check(rows, load_baseline(baseline_path))
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "regressions": [{"scenario": r.scenario, "detail": r.detail} for r in found.regressions],
+                    "flaky": [
+                        {"scenario": f.scenario, "passed": f.passed, "trials": f.trials} for f in found.flaky
+                    ],
+                    "scenarios": found.scenarios,
+                    "trials": found.trials,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(found.text())
+    return 1 if found.failed else 0
 
 
 def cmd_triage(args: argparse.Namespace) -> int:
@@ -400,6 +426,12 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     )
     rec.add_argument("--system-suffix", default="", help="appended to --agent claude-code's prompt")
     rec.add_argument("--out", default=str(DEFAULT_OUT))
+    rec.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="record each scenario this many times; a sampled agent needs more than one",
+    )
     add_audio_flags(rec)
     rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
     rec.set_defaults(run=cmd_record)
@@ -475,6 +507,7 @@ def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
     chk.add_argument("call", nargs="+")
     chk.add_argument("--baseline", default=str(DEFAULT_OUT.parent / "baseline.json"))
     chk.add_argument("--update", action="store_true", help="write the baseline from these calls instead")
+    chk.add_argument("--json", action="store_true", help="the result as one JSON object")
     add_scenario_flag(chk)
     chk.set_defaults(run=cmd_check)
 

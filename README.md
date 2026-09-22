@@ -270,19 +270,34 @@ them against the numbers of the last good run, and exits non-zero naming every s
 wrong way. It calls no model: it reads recordings.
 
 ```sh
-punchin record --agent careful --out .punchin/ci        # or your own agent
-punchin check  .punchin/ci/*.json --update              # once, to say what good looks like
-punchin check  .punchin/ci/*.json                       # every build after that
+punchin record --agent careful --repeat 3 --out .punchin/ci   # or your own agent
+punchin check  .punchin/ci/*.json --update                    # once, to say what good looks like
+punchin check  .punchin/ci/*.json                             # every build after that
 ```
 
+**`--repeat` is not optional.** An agent is sampled, so a scenario that comes out right four times in
+five will fail a single-sample gate one build in five, and the rational response to that is to re-run
+CI until it is green — which is the same as having no gate at all. A baseline here records how often a
+scenario came out right, not whether it did once, and a regression is a rate that fell:
+
 ```
-14 regressions across 10 scenarios
+14 regressions across 30 runs of 10 scenarios
   already-booked     agent_repeats: 1 -> 5
-  code-switch        note_ok: was true, now false
-  next-week          correct: was true, now false
-  self-correction    day_ok: was true, now false
+  code-switch        note_ok: 100% -> 0% of runs
+  next-week          correct: 100% -> 0% of runs
+  self-correction    day_ok: 100% -> 0% of runs
   wrong-reg-first    customer_stalls: 0 -> 3
   ...
+```
+
+A scenario that disagrees with *itself* inside one run is reported as flaky rather than as passing or
+failing. For a voice agent that is a finding and not a nuisance: it means the outcome a customer gets
+depends on the sampler.
+
+```
+2 scenarios disagreed with themselves — the outcome a customer gets depends on the sampler:
+  code-switch: came out right in 2 of 3 runs
+  hurried:     came out right in 1 of 3 runs
 ```
 
 Correctness, the day, the plate and the workshop note must not go from true to false. The number of

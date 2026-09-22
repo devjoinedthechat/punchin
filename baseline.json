@@ -1,95 +1,105 @@
 {
-  "format": 1,
+  "format": 2,
   "scenarios": {
     "already-booked": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 0,
-      "turns": 4
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 0.0,
+      "trials": 3,
+      "turns": 4.0
     },
     "code-switch": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "courtesy-car": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "hurried": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 1,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 8
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 1.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 8.0
     },
     "is-it-a-robot": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 12
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 12.0
     },
     "next-week": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "plain-booking": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "proxy-caller": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "self-correction": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     },
     "wrong-reg-first": {
-      "agent_repeats": 1,
-      "correct": true,
-      "customer_stalls": 0,
-      "day_ok": true,
-      "note_ok": true,
-      "options_max": 1,
-      "turns": 10
+      "agent_repeats": 1.0,
+      "correct": 1.0,
+      "customer_stalls": 0.0,
+      "day_ok": 1.0,
+      "note_ok": 1.0,
+      "options_max": 1.0,
+      "trials": 3,
+      "turns": 10.0
     }
   }
 }
