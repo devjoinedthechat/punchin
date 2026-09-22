@@ -12,11 +12,11 @@ from punchin.metrics import entities
 from punchin.scenarios import BY_ID, regs_mentioned
 
 READY, MISSING = available()
-pytestmark = pytest.mark.skipif(not READY, reason=MISSING)
 
 SCENARIO = BY_ID["self-correction"]
 
 
+@pytest.mark.skipif(not READY, reason=MISSING)
 def test_a_line_becomes_a_wav_a_phone_line_narrows_and_noise_lengthens_nothing(tmp_path: Path) -> None:
     clean = speak("Det er AB 12 345.", tmp_path / "clean.wav")
     assert clean.exists()
@@ -69,6 +69,7 @@ def test_a_plate_lost_in_the_recogniser_shows_up_as_a_lost_plate() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not READY, reason=MISSING)
 def test_the_danish_voice_and_the_recogniser_agree_on_a_plain_sentence(tmp_path: Path) -> None:
     """A sanity check on the pair, not on the corpus: a simple line has to survive."""
     from punchin.audio import Recognizer
@@ -116,6 +117,7 @@ def test_a_long_vocabulary_is_kept_out_of_the_decoder_prompt() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not READY, reason=MISSING)
 def test_the_call_list_recovers_a_plate_the_phone_line_destroyed(tmp_path: Path) -> None:
     """Naive decoding loses this plate; telling the recogniser the call list gets it back."""
     from punchin.audio import Recognizer, speak, telephone
@@ -144,3 +146,67 @@ def _when():
     import datetime as dt
 
     return dt.datetime.now(dt.UTC)
+
+
+@pytest.mark.skipif(not READY, reason=MISSING)
+def test_the_linux_voice_path_runs_when_espeak_is_what_is_there(tmp_path: Path) -> None:
+    """The fallback a Linux user gets. Untested code is not a fallback, it is a hope."""
+    import shutil
+    from unittest.mock import patch
+
+    if not shutil.which("espeak-ng"):
+        pytest.skip("espeak-ng is not installed")
+
+    with patch("punchin.audio.speaker", return_value="espeak-ng"):
+        wav = speak("Det er AB 12 345.", tmp_path / "e.wav")
+        assert wav.exists()
+        assert 500 < duration_ms(wav) < 8000
+        assert duration_ms(telephone(wav, tmp_path / "e-phone.wav")) == pytest.approx(
+            duration_ms(wav), abs=60
+        )
+
+
+def test_which_engine_spoke_is_on_the_customers_name(tmp_path: Path) -> None:
+    """Two engines are two distributions to a recogniser; their numbers must not be mixed."""
+    from unittest.mock import patch
+
+    from punchin.audio import AudioCustomer, Recognizer
+
+    inner = ScriptedCustomer(SCENARIO)
+    for engine in ("say", "espeak-ng"):
+        with patch("punchin.audio.speaker", return_value=engine):
+            named = AudioCustomer(inner, Recognizer("small"), tmp_path).name
+            assert engine in named, named
+
+
+def test_a_machine_with_no_voice_says_what_to_install(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    with patch("punchin.audio.speaker", return_value=None):
+        ready, missing = available()
+        assert ready is False
+        assert "espeak-ng" in missing
+        with pytest.raises(RuntimeError, match="espeak-ng"):
+            speak("Hej.", tmp_path / "x.wav")
+
+
+def test_choosing_espeak_warns_that_its_numbers_mean_nothing(caplog) -> None:
+    """A fallback that produces unreadable audio is worse than none if nobody is told."""
+    import logging
+    import shutil as sh
+    from unittest.mock import patch
+
+    from punchin.audio import ESPEAK_IS_A_TOY, _voices, speaker
+
+    if not sh.which("espeak-ng"):
+        pytest.skip("espeak-ng is not installed")
+
+    _voices.cache_clear()
+    with (
+        patch("shutil.which", lambda name: None if name == "say" else "/usr/bin/espeak-ng"),
+        caplog.at_level(logging.WARNING),
+    ):
+        assert speaker() == "espeak-ng"
+    _voices.cache_clear()
+    assert ESPEAK_IS_A_TOY in caplog.text
+    assert "mean nothing" in ESPEAK_IS_A_TOY

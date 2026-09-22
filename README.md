@@ -600,6 +600,11 @@ the customer and the agent, both lines are shown: what she said, and under it wh
   outcome — the 8 kHz band — is applied directly, which is where the entity loss above comes from.
 - **No model latency claims from audio runs.** Recognition happens between turns, not in a stream, so
   the timings recorded are the model's and the speech's, never a caller's experience of the gap.
+- **Audio needs a Mac.** The pipeline falls back to espeak-ng elsewhere and runs, but espeak's Danish
+  is not intelligible to the recogniser — *"Det er AB 12 345."* comes back as *"Vi er med til at tjekke
+  på en annen tema før"*, and biasing does not help. That fallback keeps the code exercised off macOS;
+  it does not produce numbers worth reading, and it says so when it starts. Figures in this README come
+  from the macOS `Sara` voice.
 - **One vertical.** The corpus is Danish after-sales booking. The engine takes scenarios as data and is
   not tied to it, but no second vertical is included and none is claimed to work.
 - **The feel metrics are proxies nobody has calibrated.** They are for movement on one call before and

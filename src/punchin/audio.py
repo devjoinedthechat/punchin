@@ -11,6 +11,7 @@ recogniser. No account and no key.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import wave
@@ -24,6 +25,8 @@ from punchin.customer import Customer, CustomerTurn
 if TYPE_CHECKING:
     from faster_whisper import WhisperModel
 
+log = logging.getLogger(__name__)
+
 DANISH_VOICE = "Sara"  # the one da_DK voice macOS ships
 WORDS_PER_MINUTE = 180
 # `base` mangles Danish plates past recognition; `small` reads them correctly in studio conditions
@@ -34,12 +37,26 @@ SAMPLE_RATE = 16000
 # around 120 characters and never leaked; four times that came back as the transcript on twelve turns.
 PROMPT_BUDGET = 200
 
+ESPEAK_IS_A_TOY = (
+    "using espeak-ng: its Danish is not intelligible to the recogniser (a plate read by it comes back "
+    "as unrelated words, biased or not), so this run exercises the pipeline and its numbers mean "
+    "nothing. Use a machine with the macOS Sara voice for figures worth quoting."
+)
+
 
 def speaker() -> str | None:
-    """Whichever text-to-speech this machine has: macOS `say`, or espeak-ng anywhere else."""
+    """Whichever text-to-speech this machine has: macOS `say`, or espeak-ng anywhere else.
+
+    The two are not interchangeable, and it is not close. Measured through whisper-small over the
+    phone band, `say` reading "Det er AB 12 345." comes back as the plate once the call list is
+    passed to the decoder; espeak-ng reading the same line comes back as "Vi er med til at tjekke på
+    en annen tema før", and biasing does not help. espeak keeps the pipeline runnable off macOS — it
+    does not make the numbers mean anything. `ESPEAK_IS_A_TOY` is the warning that says so.
+    """
     if shutil.which("say") and DANISH_VOICE in _voices():
         return "say"
     if shutil.which("espeak-ng"):
+        log.warning(ESPEAK_IS_A_TOY)
         return "espeak-ng"
     return None
 

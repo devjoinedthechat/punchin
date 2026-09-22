@@ -209,6 +209,12 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
                 default=1,
                 help="measure this many times; the simulator is sampled, so one run is not a number",
             )
+            sub.add_argument(
+                "--workers",
+                type=int,
+                default=4,
+                help="turns to measure at once; teacher-forcing makes them independent",
+            )
         add_scenario_flag(sub)
         sub.set_defaults(run=run)
 

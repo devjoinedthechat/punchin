@@ -177,14 +177,14 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
             goal, _ = extract(call, model, TODAY)
 
         if args.ablate:
-            print(ablation(call, goal, model, FIELDS, times=args.repeat).text())
+            print(ablation(call, goal, model, FIELDS, times=args.repeat, workers=args.workers).text())
             continue
 
         if args.repeat > 1:
-            print(repeated(call, goal, model, args.repeat).one_line())
+            print(repeated(call, goal, model, args.repeat, args.workers).one_line())
             continue
 
-        report = teacher_forced(call, goal, model)
+        report = teacher_forced(call, goal, model, args.workers)
         reports.append(report)
         print(report.text() if not args.summary else report.one_line())
         if not args.summary:

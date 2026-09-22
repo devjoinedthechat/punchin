@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from statistics import mean, median, stdev
 
-from punchin.call import Call
+from punchin.call import Call, Turn
 from punchin.goal import facts, volunteered
 from punchin.model import Model
 from punchin.pinned import PinnedCustomer
@@ -160,36 +161,53 @@ class Repeated:
         )
 
 
-def repeated(call: Call, goal: GoalState, model: Model, times: int) -> Repeated:
+def repeated(call: Call, goal: GoalState, model: Model, times: int, workers: int = 1) -> Repeated:
     found = Repeated(call.id)
     for _ in range(max(1, times)):
-        found.runs.append(teacher_forced(call, goal, model))
+        found.runs.append(teacher_forced(call, goal, model, workers))
     return found
 
 
-def teacher_forced(call: Call, goal: GoalState, model: Model) -> Report:
+def _score_turn(call: Call, goal: GoalState, model: Model, turn: Turn) -> tuple[TurnScore, float]:
+    prefix = call.model_copy(update={"turns": call.turns[: turn.index]})
+    customer = PinnedCustomer(model, goal)
+    simulated = customer.line(prefix)
+    asked = prefix.last("agent")
+    line = asked.spoken if asked else ""
+    return (
+        TurnScore(
+            turn.index,
+            turn.spoken,
+            simulated,
+            facts(goal, turn.spoken),
+            facts(goal, simulated),
+            asked=line,
+            real_extra=volunteered(goal, line, turn.spoken),
+            simulated_extra=volunteered(goal, line, simulated),
+        ),
+        customer.cost_usd,
+    )
+
+
+def teacher_forced(call: Call, goal: GoalState, model: Model, workers: int = 1) -> Report:
+    """Score every customer turn against the real one.
+
+    Teacher-forcing is what makes `workers` safe: each turn is asked for against the real conversation
+    that preceded it, so no turn depends on any other and they can all be in flight at once. A
+    seven-arm ablation of one call is a hundred model calls, which is half an hour in sequence and a
+    few minutes at four at a time.
+    """
     report = Report(call.id)
-    for turn in call.turns:
-        if turn.speaker != "customer":
-            continue
-        prefix = call.model_copy(update={"turns": call.turns[: turn.index]})
-        customer = PinnedCustomer(model, goal)
-        simulated = customer.line(prefix)
-        report.cost_usd += customer.cost_usd
-        asked = prefix.last("agent")
-        line = asked.spoken if asked else ""
-        report.turns.append(
-            TurnScore(
-                turn.index,
-                turn.spoken,
-                simulated,
-                facts(goal, turn.spoken),
-                facts(goal, simulated),
-                asked=line,
-                real_extra=volunteered(goal, line, turn.spoken),
-                simulated_extra=volunteered(goal, line, simulated),
-            )
-        )
+    spoken = [turn for turn in call.turns if turn.speaker == "customer"]
+    if workers <= 1:
+        scored = [_score_turn(call, goal, model, turn) for turn in spoken]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            scored = list(pool.map(lambda turn: _score_turn(call, goal, model, turn), spoken))
+    for score, cost in scored:
+        report.turns.append(score)
+        report.cost_usd += cost
+    report.turns.sort(key=lambda score: score.index)
     return report
 
 
@@ -290,9 +308,17 @@ class Ablated:
         return "\n".join(lines)
 
 
-def ablation(call: Call, goal: GoalState, model: Model, fields: Sequence[str], times: int = 1) -> Ablated:
+def ablation(
+    call: Call,
+    goal: GoalState,
+    model: Model,
+    fields: Sequence[str],
+    *,
+    times: int = 1,
+    workers: int = 1,
+) -> Ablated:
     """Measure fidelity with everything, then once per field withheld, `times` runs each."""
-    found = Ablated(call.id, repeated(call, goal, model, times))
+    found = Ablated(call.id, repeated(call, goal, model, times, workers))
     for name in fields:
-        found.dropped[name] = repeated(call, without(goal, name), model, times)
+        found.dropped[name] = repeated(call, without(goal, name), model, times, workers)
     return found
