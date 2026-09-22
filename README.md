@@ -776,8 +776,10 @@ uv run python scripts/import_smoke.py     # reading somebody else's transcript s
 ```
 
 The suite needs no API key and no `claude` binary: a scripted stand-in speaks Claude Code's stream-json,
-so the whole path runs offline and free. The audio tests skip themselves unless `say`, ffmpeg and
-faster-whisper are all present, and `-m slow` holds the two that need a recogniser model on disk.
+so the whole path runs offline and free, and an autouse fixture makes reaching the real backend an
+error rather than a surprise on the bill. The audio tests skip themselves unless `say`, ffmpeg and
+faster-whisper are all present. `-m slow` holds three: two that need a recogniser model on disk, and
+the one that runs `examples/rule_agent.py` through the whole corpus.
 
 ```
 punchin doctor             what works on this machine, and what to install for the rest
