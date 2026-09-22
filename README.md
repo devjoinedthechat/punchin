@@ -25,6 +25,7 @@
   <a href="#how-a-fork-works">How a fork works</a> ·
   <a href="#is-the-simulated-customer-the-real-one">Fidelity</a> ·
   <a href="#the-corpus">Corpus</a> ·
+  <a href="#down-a-phone-line">Audio</a> ·
   <a href="#what-it-does-not-do">Limits</a>
 </p>
 
@@ -112,6 +113,13 @@ uv run punchin record --agent careless --scenario self-correction
 uv run punchin metrics .punchin/calls/*.json
 ```
 
+Spoken, if you are on a Mac with ffmpeg (`uv sync --extra audio`, and the first run downloads a
+recogniser):
+
+```sh
+uv run punchin record --agent careful --audio --scenario plain-booking
+```
+
 With a model as the agent. The backend is **Claude Code in print mode**, so it runs on the login you
 already have and needs no API key:
 
@@ -192,6 +200,54 @@ about it — the plate, the day, whether a booking should happen at all.
 Two scripted agents keep the graders honest: `careful` reaches the expected outcome on all ten, and
 `careless` makes each built-in mistake. Both run in CI. If a change makes them agree, the corpus has
 stopped measuring anything, and that is a failure before a model is ever run.
+
+## Down a phone line
+
+The corpus can be spoken instead of typed. The customer's line is rendered with the one Danish voice
+macOS ships, put through the 8 kHz G.711 mu-law band a telephone call actually uses, and handed to
+faster-whisper. **The agent then reads what the recogniser produced and never what was said** — what
+was said stays on the turn as the answer key, which is what makes the loss measurable.
+
+```sh
+uv run punchin record --agent careful --audio             # down a phone line
+uv run punchin record --agent careful --audio --studio    # a clean microphone, for comparison
+```
+
+The scripted agent reaches the right outcome on all ten scenarios in text. Once it has to listen:
+
+| | plates that survived | calls that completed | agent repeated itself | customer hung up |
+|---|---|---|---|---|
+| text | 10 / 10 | 10 / 10 | 1 | 0 / 10 |
+| studio microphone | 2 / 10 | 2 / 10 | up to 5 | 8 / 10 |
+| through a phone line | **0 / 10** | 0 / 10 | up to 5 | 10 / 10 |
+
+The plate is the whole story, and one digit is enough:
+
+```
+   3 Kunde CD 67 890.
+      heard: CD 67850
+   4 Agent Den kan jeg ikke finde i systemet. Kan du sige nummerpladen igen?
+         -> lookup_vehicle({'reg': 'CD67850'}) ERROR no vehicle registered as 'CD67850'
+   6 Agent Den kan jeg ikke finde i systemet. Kan du sige nummerpladen igen?
+         -> lookup_vehicle({'reg': 'CD67850'}) ERROR no vehicle registered as 'CD67850'
+```
+
+Two things fall out of that table which text could not have shown.
+
+**The agent has no fallback.** It is optimal on the text corpus and helpless when an entity fails twice:
+it never spells the plate back, never asks for the make instead, never offers a person. The customer
+hears the same sentence four times and hangs up. That is a missing path, not a bad prompt, and it only
+appears when something can go wrong between a mouth and a tool call.
+
+**Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True` through a
+phone line, because the right outcome there is no booking and the call collapsed before making one. The
+feel columns are the only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`,
+`ended_by=customer`.
+
+One caveat, stated plainly: this is **synthesized** Danish, not a human caller, and a TTS voice is a
+different — in places harder — distribution for a recogniser. These numbers show the shape of the
+failure and the cost of the phone band. They are not an estimate of what a production Danish agent does
+with real customers.
 
 ## What it does not do
 
