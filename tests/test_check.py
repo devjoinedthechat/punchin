@@ -164,12 +164,15 @@ def test_the_result_is_available_as_json(tmp_path: Path, capsys: pytest.CaptureF
     assert parsed["regressions"] == []
 
 
-def test_checking_without_a_baseline_says_how_to_make_one(tmp_path: Path) -> None:
+def test_checking_without_a_baseline_says_how_to_make_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
     calls = tmp_path / "calls"
     main(["record", "--agent", "careful", "--scenario", "plain-booking", "--out", str(calls), "-q"])
     recorded = [str(p) for p in calls.glob("2026*.json")]
-    with pytest.raises(SystemExit, match="--update"):
-        main(["check", *recorded, "--baseline", str(tmp_path / "nope.json"), "-q"])
+    code = main(["check", *recorded, "--baseline", str(tmp_path / "nope.json"), "-q"])
+    assert code == 2  # setup, not regression
+    assert "--update" in capsys.readouterr().err
 
 
 def test_one_unlucky_run_does_not_fail_a_build_but_a_consistent_one_does() -> None:

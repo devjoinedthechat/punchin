@@ -167,10 +167,22 @@ class Discrimination:
         low, high = self.paired.interval()
         if low <= 0.5 <= high:
             lines.append("  indistinguishable at this sample size: the interval covers 50%")
-        else:
+        elif self.paired.rate > 0.5:
             lines.append(f"  distinguishable {self.paired.rate:.0%} of the time, and the interval misses 50%")
             told = [g.why for g in self.paired.guesses if g.picked_real][:3]
             lines.extend(f"    gave it away: {why}" for why in told)
+        else:
+            # Below 50% is not "worse at telling them apart". A judge that is reliably wrong is
+            # carrying just as much signal as one that is reliably right, with the label inverted:
+            # the simulated turn is the one that reads as human. Its reasons are the useful half.
+            lines.append(
+                f"  distinguishable, but inverted: the judge named the simulated turn as the real "
+                f"one {1 - self.paired.rate:.0%} of the time, and the interval misses 50%. The "
+                f"simulator is not failing to sound like her — it sounds more like a person than "
+                f"the recording does."
+            )
+            told = [g.why for g in self.paired.guesses if not g.picked_real][:3]
+            lines.extend(f"    picked the simulator because: {why}" for why in told)
         lines.append(f"  ${self.cost_usd:.3f}")
         return "\n".join(lines)
 

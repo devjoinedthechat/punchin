@@ -10,6 +10,7 @@ import argparse
 import datetime as dt
 import json
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -496,7 +497,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 0
 
     if not baseline_path.exists():
-        raise SystemExit(f"no baseline at {baseline_path}; write one with `punchin check --update`")
+        # Exit 2, not 1. In CI the difference is the whole message: 1 is "the agent got worse",
+        # 2 is "this gate was never set up". A missing file must not read as a regression.
+        print(
+            f"punchin: no baseline at {baseline_path}; write one with `punchin check --update`",
+            file=sys.stderr,
+        )
+        return 2
     found = check(rows, load_baseline(baseline_path))
     if args.json:
         print(

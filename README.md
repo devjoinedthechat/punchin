@@ -142,7 +142,7 @@ uv run punchin scenarios                       # the corpus and the outcome each
 uv run punchin record --agent careful          # all ten, free and deterministic
 uv run punchin record --agent careless --scenario self-correction
 uv run punchin metrics .punchin/calls/*.json
-uv run punchin check   .punchin/calls/*.json   # against the baseline this repository ships
+uv run punchin check   .punchin/calls/*.json --baseline baseline.json   # the bar this repo commits to
 ```
 
 Against an agent of your own, which is the point of the thing:

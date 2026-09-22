@@ -151,3 +151,35 @@ def test_pooling_nothing_is_refused() -> None:
 
     with pytest.raises(ValueError, match="nothing to pool"):
         pooled([])
+
+
+def _run(right: int, of: int, *, blind_right: int | None = None, floor_right: int | None = None):
+    """A discrimination with a known outcome in each arm, without asking a model anything."""
+    paired = Round("real vs simulated", "50%")
+    paired.guesses = [Guess(i, "r", "s", "real", i < right, f"reason {i}") for i in range(of)]
+    blind = Round("blind (real vs real)", "50%")
+    blind.guesses = [
+        Guess(i, "r", "r", "real", i < (blind_right if blind_right is not None else of // 2), "")
+        for i in range(of)
+    ]
+    floor = Round("floor (real vs another call)", "high")
+    floor.guesses = [
+        Guess(i, "r", "o", "real", i < (floor_right if floor_right is not None else of), "")
+        for i in range(of)
+    ]
+    return Discrimination("c", paired, blind, floor)
+
+
+def test_a_judge_that_is_reliably_wrong_is_not_a_judge_that_cannot_tell() -> None:
+    """28% is separation with the label inverted, not 28% of the way to being fooled."""
+    printed = _run(13, 47).text()
+    assert "inverted" in printed
+    assert "72% of the time" in printed  # it named the simulator as real
+    assert "distinguishable 28% of the time" not in printed
+
+
+def test_an_inverted_result_quotes_the_reasons_it_preferred_the_simulator() -> None:
+    """At 28% the informative half is the 34 it got wrong, not the 13 it got right."""
+    printed = _run(13, 47).text()
+    assert "picked the simulator because: reason 13" in printed
+    assert "gave it away" not in printed
