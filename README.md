@@ -300,6 +300,10 @@ depends on the sampler.
   hurried:     came out right in 1 of 3 runs
 ```
 
+That block is what flakiness looks like, not something this repository's own corpus produces: the two
+agents it ships with are deterministic, so they agree with themselves every time. You will see it the
+moment a model is the agent.
+
 Correctness, the day, the plate and the workshop note must not go from true to false. The number of
 times read out in one breath, the agent repeating itself and the customer stalling must not go up.
 
@@ -451,6 +455,8 @@ turn rather than on their averages:
 
   Paired by turn, so turn difficulty cancels.
 ```
+
+<!-- MEASURED-ABLATION -->
 
 The repeats are not optional politeness, and neither is the pairing. Four runs of one call with the
 identical goal state came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting a fifth.
