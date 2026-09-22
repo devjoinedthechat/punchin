@@ -359,13 +359,17 @@ scenario came out right, not whether it did once, and a regression is a rate tha
 
 ```
 14 regressions across 30 runs of 10 scenarios
-  already-booked     agent_repeats: 1 -> 5
+  already-booked     agent_repeats: 1 -> 5 (it varies by 0 on its own)
+  already-booked     turns: 4 -> 11 (it varies by 0 on its own)
   code-switch        note_ok: 100% -> 0% of runs
   next-week          correct: 100% -> 0% of runs
-  self-correction    day_ok: 100% -> 0% of runs
-  wrong-reg-first    customer_stalls: 0 -> 3
+  next-week          day_ok: 100% -> 0% of runs
   ...
 ```
+
+The tolerance is not a number anybody chose. A baseline records how much each figure moved across its
+own runs, so a scenario that naturally wanders by four turns is not failed for wandering by two, and one
+that never wanders is held to that. When a number does break, the report says what its own spread was.
 
 A scenario that disagrees with *itself* inside one run is reported as flaky rather than as passing or
 failing. For a voice agent that is a finding and not a nuisance: it means the outcome a customer gets
