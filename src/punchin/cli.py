@@ -87,8 +87,12 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     fk = commands.add_parser(
         "fork", parents=[common], help="re-run a recorded call from one turn with the change applied"
     )
-    fk.add_argument("call")
-    fk.add_argument("--at", type=int, required=True, help="the agent turn to fork at (see `punchin show`)")
+    fk.add_argument("call", nargs="+", help="one recording, or many to sweep one change across them")
+    fk.add_argument(
+        "--at",
+        default="half",
+        help="the agent turn to fork at: a number from `punchin show`, or first, half or last",
+    )
     fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
     fk.add_argument("--system-suffix", default="", help="the prompt change under test")
     fk.add_argument("--model", default="claude-sonnet-5")

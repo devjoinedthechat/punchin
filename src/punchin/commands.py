@@ -11,6 +11,7 @@ import datetime as dt
 import json
 import shlex
 from pathlib import Path
+from typing import Any
 
 from punchin.adapter import CommandAgent
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
@@ -20,7 +21,7 @@ from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, normalize_reg, serve
 from punchin.doctor import examine, report
 from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
-from punchin.fork import Budget, agent_turns, fork
+from punchin.fork import Budget, Sweep, agent_turns, fork, fork_point
 from punchin.goal import extract, score
 from punchin.importer import read_call, scenario_for
 from punchin.metrics import summarize
@@ -66,24 +67,43 @@ def agent_for(args: argparse.Namespace) -> Agent:
     raise SystemExit(f"unknown agent {name!r}")
 
 
+GUTTER = " " * 12  # what one turn's number and speaker occupy, so continuations line up under the text
+
+
+def _arguments(arguments: dict[str, Any]) -> str:
+    """`date_from=2026-10-01, reg=AB 12 345` rather than a Python dict printed at somebody."""
+    return ", ".join(f"{name}={value}" for name, value in arguments.items())
+
+
 def show(call: Call) -> str:
-    lines = [f"{call.id}  scenario={call.scenario}  agent={call.agent}  cost=${call.cost_usd:.3f}"]
+    """A recording, laid out to be read: turn, speaker, then everything about that turn aligned under it."""
+    header = f"{call.id}   {call.agent}"
+    if call.cost_usd:
+        header += f"   ${call.cost_usd:.3f}"
+    lines = [header, ""]
+
     for turn in call.turns:
         who = "Agent" if turn.speaker == "agent" else "Kunde"
-        took = f"  ({turn.model_ms} ms)" if turn.model_ms else ""
-        lines.append(f"  {turn.index:2} {who} {turn.spoken}{took}")
+        took = f"   ({turn.model_ms} ms)" if turn.model_ms else ""
+        lines.append(f"{turn.index:>3}  {who:<5}  {turn.spoken}{took}")
         if turn.heard is not None and turn.heard.strip() != turn.spoken.strip():
-            lines.append(f"      heard: {turn.heard}")
-        lines.extend(
-            f"         -> {c.tool}({c.arguments}) {'ERROR ' + c.error if c.error else ''}"
-            for c in turn.tool_calls
-        )
-    lines.append(f"  fork points (agent turns): {', '.join(str(i) for i in agent_turns(call))}")
-    outcome = ", ".join(
-        f"{b['reg']} {b['date']} {b['time']}{' note=' + b['note'] if b['note'] else ''}"
-        for b in call.bookings
+            lines.append(f"{GUTTER}heard  {turn.heard}")
+        for made in turn.tool_calls:
+            label = "error" if made.error else "calls"
+            lines.append(f"{GUTTER}{label}  {made.tool}({_arguments(made.arguments)})")
+            if made.error:
+                lines.append(f"{GUTTER}       {made.error}")
+
+    booked = ", ".join(
+        f"{one['reg']} {one['date']} {one['time']}" + (f" ({one['note']})" if one["note"] else "")
+        for one in call.bookings
     )
-    lines.append(f"  booked: {outcome or 'nothing'}   ended by: {call.notes.get('ended_by')}")
+    lines += [
+        "",
+        f"{'booked':>8}  {booked or 'nothing'}",
+        f"{'ended by':>8}  {call.notes.get('ended_by')}",
+        f"{'fork at':>8}  {', '.join(str(i) for i in agent_turns(call))}",
+    ]
     return "\n".join(lines)
 
 
@@ -229,7 +249,9 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 
 def cmd_fork(args: argparse.Namespace) -> int:
     agent = agent_for(args)  # before any file is read, so a bad flag fails in a millisecond
-    call = Call.load(Path(args.call))
+    if len(args.call) > 1:
+        return _sweep(args, agent)
+    call = Call.load(Path(args.call[0]))
     scenario = truth_for(known_scenarios(args), call, args)
     model = model_for(args)
     goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
@@ -239,7 +261,7 @@ def cmd_fork(args: argparse.Namespace) -> int:
     report = fork(
         call,
         scenario,
-        args.at,
+        fork_point(call, args.at),
         agent=agent,
         goal=goal,
         model=model,
@@ -256,6 +278,44 @@ def cmd_fork(args: argparse.Namespace) -> int:
     else:
         print(report.text())
     return 0 if report.fixed == len(report.attempts) and report.attempts else 1
+
+
+def _sweep(args: argparse.Namespace, agent: Agent) -> int:
+    """One change against many recordings. Fixing four and breaking one is not an improvement."""
+    known = known_scenarios(args)
+    model = model_for(args)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    budget = Budget(args.max_usd)
+    changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"agent {agent.name}"
+    swept = Sweep(changed)
+
+    for path in args.call:
+        call = Call.load(Path(path))
+        scenario = truth_for(known, call, args)
+        goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
+        if budget.exhausted:
+            swept.stopped = f"budget of ${budget.limit_usd:.2f} spent after {len(swept.reports)} calls"
+            break
+        swept.reports.append(
+            fork(
+                call,
+                scenario,
+                fork_point(call, args.at),
+                agent=agent,
+                goal=goal,
+                model=model,
+                state_path=out / ".dms-state.json",
+                repeat=args.repeat,
+                changed=changed,
+                budget=budget,
+                out=out,
+                wrap=lambda inner: voice(args, inner, out),
+            )
+        )
+    (out / ".dms-state.json").unlink(missing_ok=True)
+    print(json.dumps(swept.as_dict(), ensure_ascii=False, sort_keys=True) if args.json else swept.text())
+    return 1 if swept.verdicts["broke"] else 0
 
 
 def cmd_check(args: argparse.Namespace) -> int:

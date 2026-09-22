@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml"><img src="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-192-brightgreen" alt="192 tests">
+  <img src="https://img.shields.io/badge/tests-214-brightgreen" alt="214 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
 </p>
 
@@ -25,6 +25,7 @@
   <a href="#your-agent-not-this-one">Your agent</a> ·
   <a href="#a-call-you-did-not-record">Import</a> ·
   <a href="#which-call-to-fork">Triage</a> ·
+  <a href="#does-the-fix-break-anything-else">Sweep</a> ·
   <a href="#as-a-gate">As a gate</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
   <a href="#does-a-fork-tell-the-truth">Soundness</a> ·
@@ -55,13 +56,16 @@ An outbound Danish *syn* (MOT) reminder, spoken down a simulated phone line to a
 customer asks for Thursday morning. The recogniser hands the agent a fragment:
 
 ```
-   5 Kunde Torsdag formiddag ville være godt.
-      heard: 2. derform i dag ville være godt.
-   6 Agent Den 2. oktober har jeg ledigt klokken 8:00, 8:30, 10:00, 13:00 eller 14:30. Passer et af dem?
-         -> find_slots({'date_from': '2026-10-02', 'date_to': '2026-10-02'})
-  12 Agent Super, så er det booket! Din Toyota Yaris kommer til syn fredag den 2. oktober klokken 8:00.
-         -> book({'slot_id': '20261002-0800', 'reg': 'CD 67 890'})
-  13 Kunde Tak, hej hej.
+  5  Kunde  Torsdag formiddag ville være godt.
+            heard  2. derform i dag ville være godt.
+  6  Agent  Den 2. oktober har jeg ledigt klokken 8:00, 8:30, 10:00, 13:00 eller 14:30.
+            calls  find_slots(date_from=2026-10-02, date_to=2026-10-02)
+ 12  Agent  Super, så er det booket! Din Toyota Yaris kommer til syn fredag den 2. oktober klokken 8:00.
+            calls  book(slot_id=20261002-0800, reg=CD 67 890)
+ 13  Kunde  Tak, hej hej.
+
+   booked  CD67890 2026-10-02 08:00
+ ended by  agent
 ```
 
 The model turned half a word into a plausible date and never questioned it. She wanted Thursday the 1st
@@ -81,15 +85,15 @@ The prefix is identical, so the agent is handed exactly the same mangled fragmen
 refuses to guess:
 
 ```
-   5 Kunde Torsdag formiddag ville være godt.
-      heard: 2. derform i dag ville være godt.          <- the same words, from the recording
-   6 Agent Undskyld, jeg er ikke helt sikker på, hvilken dag du mener - kan du sige ugedagen igen?
-   7 Kunde Øh nej undskyld, jeg mener den 1. oktober - altså torsdag.
-   8 Agent Så det er torsdag den 1. oktober, du gerne vil have bilen ind - er det rigtigt?
-   9 Kunde Ja, det er rigtigt, torsdag den 1. oktober.
-      heard: Ja, det er rigtigt, to steder den den første ude toper.
-  10 Agent Godt, jeg kan se der er ledigt kl. 8:00 den dag - passer det dig?
-         -> find_slots({'date_from': '2026-10-01', 'date_to': '2026-10-01'})
+  5  Kunde  Torsdag formiddag ville være godt.
+            heard  2. derform i dag ville være godt.        ← the same words, from the recording
+  6  Agent  Undskyld, jeg er ikke helt sikker på, hvilken dag du mener - kan du sige ugedagen igen?
+  7  Kunde  Øh nej undskyld, jeg mener den 1. oktober - altså torsdag.
+  8  Agent  Så det er torsdag den 1. oktober, du gerne vil have bilen ind - er det rigtigt?
+  9  Kunde  Ja, det er rigtigt, torsdag den 1. oktober.
+            heard  Ja, det er rigtigt, to steder den den første ude toper.
+ 10  Agent  Godt, jeg kan se der er ledigt kl. 8:00 den dag - passer det dig?
+            calls  find_slots(date_from=2026-10-01, date_to=2026-10-01)
 ```
 
 ```
@@ -226,11 +230,11 @@ Forking it at turn 6 with a read-back instruction, and one about carrying what s
 booking note:
 
 ```
-   5 Kunde Torsdag, tak. Og jeg skal have en lånebil.
-   6 Agent Vi har torsdag den 1. oktober kl. 8:00 ledig. Passer det?
-   8 Agent Perfekt, så er du booket til torsdag den 1. oktober kl. 8:00, og jeg har noteret at du
-           skal have en lånebil. Vi ses! Farvel.
-         -> book({'slot_id': '20261001-0800', 'reg': 'XY 55 123', 'note': 'Lånebil ønskes'})
+  5  Kunde  Torsdag, tak. Og jeg skal have en lånebil.
+  6  Agent  Vi har torsdag den 1. oktober kl. 8:00 ledig. Passer det?
+  8  Agent  Perfekt, så er du booket til torsdag den 1. oktober kl. 8:00, og jeg har noteret
+            at du skal have en lånebil. Vi ses! Farvel.
+            calls  book(slot_id=20261001-0800, reg=XY 55 123, note=Lånebil ønskes)
 
   correct in 2 of 2 attempts (original: False)
   live cost $0.086; the 6 turns before the fork cost nothing
@@ -263,6 +267,33 @@ the line, whether the agent repeated itself, who hung up — and deliberately do
 cluster nobody can explain in a sentence is not a cluster anybody can act on. A call showing several
 faults is filed under the first one worth fixing, so it is counted once, and each group names the
 shortest call in it: the cheapest to fork and the easiest to read.
+
+## Does the fix break anything else?
+
+A change that repairs one call and breaks three is worse than no change. Give `fork` several recordings
+and it applies the same change to all of them:
+
+```sh
+punchin fork .punchin/calls/*.json --at half --repeat 3 --system-suffix "..."
+```
+
+```
+system suffix 'Tilbyd kun én tid ad gangen.'
+  across 10 calls:
+    fixed          4  plain-booking, self-correction, next-week, hurried
+    broke          1  courtesy-car
+    held           5  …
+
+  This change breaks 1 call(s) that were right before. Fixing 4 is not the number to look at.
+  live cost $0.41; every prefix was free
+```
+
+It exits non-zero when anything broke, so a sweep is something a pull request can run. `--at` takes a
+turn number, or `first`, `half` or `last` — resolved against each recording's own agent turns, because
+turn 6 is a different moment in every call.
+
+That closes the loop: [triage](#which-call-to-fork) finds the calls worth looking at, a fork fixes one,
+a sweep says what that fix costs everywhere else, and [the gate](#as-a-gate) holds the result.
 
 ## As a gate
 

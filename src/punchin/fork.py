@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -243,3 +243,93 @@ def fork(
         if out is not None:
             attempt.save(out)
     return report
+
+
+def fork_point(call: Call, where: str) -> int:
+    """Which agent turn to fork this call at. An index, or `first`, `half` or `last`.
+
+    A sweep needs this because turn 6 is a different moment in every call. The names resolve against
+    each recording's own agent turns, so one instruction means the same thing across an archive.
+    """
+    points = agent_turns(call)
+    if not points:
+        raise ValueError(f"{call.id} has no agent turns to fork at")
+    if where == "first":
+        return points[0]
+    if where == "last":
+        return points[-1]
+    if where == "half":
+        return points[len(points) // 2]
+    try:
+        at = int(where)
+    except ValueError:
+        raise ValueError(f"--at takes a turn number, or first, half or last; not {where!r}") from None
+    if at not in points:
+        raise ValueError(f"turn {at} is not an agent turn in {call.id}; fork at one of: {points}")
+    return at
+
+
+Verdict = Literal["fixed", "broke", "still wrong", "held"]
+
+
+def verdict_of(report: ForkReport) -> Verdict:
+    """What the change did to this call. The majority of attempts decides, because agents are sampled."""
+    was = bool(report.before["correct"])
+    # Counted against `after`, which is what `fixed` counts, so the two can never disagree.
+    outcomes = report.after
+    now = report.fixed * 2 > len(outcomes) if outcomes else was
+    if was and now:
+        return "held"
+    if was and not now:
+        return "broke"
+    return "fixed" if now else "still wrong"
+
+
+@dataclass
+class Sweep:
+    """One change, across many recordings. The number that matters is not how many it fixed."""
+
+    change: str
+    reports: list[ForkReport] = field(default_factory=list)
+    stopped: str | None = None
+
+    @property
+    def verdicts(self) -> dict[Verdict, list[str]]:
+        found: dict[Verdict, list[str]] = {"fixed": [], "broke": [], "still wrong": [], "held": []}
+        for report in self.reports:
+            found[verdict_of(report)].append(report.scenario.id)
+        return found
+
+    @property
+    def live_cost_usd(self) -> float:
+        return sum(report.live_cost_usd for report in self.reports)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "change": self.change,
+            "calls": len(self.reports),
+            "verdicts": self.verdicts,
+            "live_cost_usd": round(self.live_cost_usd, 4),
+            "stopped": self.stopped,
+        }
+
+    def text(self) -> str:
+        found = self.verdicts
+        lines = [f"{self.change}", f"  across {len(self.reports)} calls:"]
+        for name in ("fixed", "broke", "still wrong", "held"):
+            if found[name]:
+                lines.append(f"    {name:12} {len(found[name]):3}  {', '.join(found[name][:6])}")
+        lines.append("")
+        if found["broke"]:
+            lines.append(
+                f"  This change breaks {len(found['broke'])} call(s) that were right before. "
+                f"Fixing {len(found['fixed'])} is not the number to look at."
+            )
+        elif found["fixed"]:
+            lines.append(f"  Fixes {len(found['fixed'])}, breaks nothing.")
+        else:
+            lines.append("  Changes nothing that was measured.")
+        lines.append(f"  live cost ${self.live_cost_usd:.3f}; every prefix was free")
+        if self.stopped:
+            lines.append(f"  stopped early: {self.stopped}")
+        return "\n".join(lines)
