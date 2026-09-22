@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-38-brightgreen" alt="38 tests">
+  <img src="https://img.shields.io/badge/tests-44-brightgreen" alt="44 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -195,12 +195,16 @@ stopped measuring anything, and that is a failure before a model is ever run.
 
 ## What it does not do
 
-- **No audio.** Turns are text with timing. The latency reported is the model's, not anything a caller
-  heard, and it is labelled as such.
-- **No real-time turn-taking.** The loop is turn-driven, which is what makes forking possible, and what
-  makes barge-in and endpointing out of scope. Those need a streaming adapter.
-- **No telephony, no ASR, no TTS.** Entity loss through a real recogniser is not exercised.
-- **One vertical.** The corpus is Danish after-sales booking. The engine is not tied to it; the corpus is.
+- **No real-time turn-taking.** The loop is turn-driven, and that is the trade that buys forking: you
+  cannot serve a prefix and hand control over mid-utterance at the same time. Barge-in, endpointing and
+  the silence before a reply need a duplex streaming pipeline, and they are measured well elsewhere
+  (EVA-Bench, IHBench, and every commercial voice-testing platform).
+- **No telephony.** There is no phone number and no carrier. The part of a phone call that changes the
+  outcome — the 8 kHz band — is applied directly, which is where the entity loss above comes from.
+- **No model latency claims from audio runs.** Recognition happens between turns, not in a stream, so
+  the timings recorded are the model's and the speech's, never a caller's experience of the gap.
+- **One vertical.** The corpus is Danish after-sales booking. The engine takes scenarios as data and is
+  not tied to it, but no second vertical is included and none is claimed to work.
 
 ## Development
 

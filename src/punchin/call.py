@@ -36,6 +36,9 @@ class Turn(BaseModel):
     tool_calls: list[ToolCall] = []
     model_ms: int | None = None  # how long the model took, when a model produced the turn
     cost_usd: float = 0.0
+    audio: str | None = None  # the rendered wav, when the turn was spoken
+    heard: str | None = None  # what the recogniser made of it, when the turn went through one
+    audio_ms: int | None = None  # how long the turn took to say
 
     @property
     def ends_call(self) -> bool:
@@ -43,7 +46,13 @@ class Turn(BaseModel):
 
     @property
     def spoken(self) -> str:
+        """What was actually said. The answer key: graders and fidelity score against this."""
         return self.text.replace(FAREWELL, "").strip()
+
+    @property
+    def as_heard(self) -> str:
+        """What reached the agent. The same as `spoken` until a recogniser sat between them."""
+        return (self.heard if self.heard is not None else self.text).replace(FAREWELL, "").strip()
 
 
 class Call(BaseModel):
@@ -56,19 +65,24 @@ class Call(BaseModel):
     bookings: list[dict[str, Any]] = Field(default_factory=list)  # what ended up in the DMS
     notes: dict[str, Any] = Field(default_factory=dict)
 
-    def transcript(self, upto: int | None = None) -> str:
-        """The conversation as text, `Agent:` and `Kunde:` lines, for a model to read."""
+    def transcript(self, upto: int | None = None, *, heard: bool = True) -> str:
+        """The conversation as the agent has it: `Agent:` and `Kunde:` lines.
+
+        `heard` is the default because an agent only ever has the recogniser's version of what the
+        customer said. Pass `heard=False` for the answer key.
+        """
         lines = []
         for turn in self.turns[:upto]:
             who = "Agent" if turn.speaker == "agent" else "Kunde"
-            lines.append(f"{who}: {turn.spoken}")
+            lines.append(f"{who}: {turn.as_heard if heard else turn.spoken}")
         return "\n".join(lines)
 
     def last(self, speaker: Speaker) -> Turn | None:
         return next((t for t in reversed(self.turns) if t.speaker == speaker), None)
 
-    def said(self, speaker: Speaker) -> list[str]:
-        return [t.spoken for t in self.turns if t.speaker == speaker]
+    def said(self, speaker: Speaker, *, heard: bool = True) -> list[str]:
+        """What that side put into the call. `heard` by default: an agent has no access to the rest."""
+        return [t.as_heard if heard else t.spoken for t in self.turns if t.speaker == speaker]
 
     @property
     def cost_usd(self) -> float:

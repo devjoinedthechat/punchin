@@ -122,9 +122,11 @@ class ScriptedAgent:
         return AgentTurn(text, self.calls)
 
     def _policy(self, call: Call, lead: Lead, dms: Dms) -> str:
+        # Everything this agent knows about the customer arrives through the recogniser. Reading
+        # `spoken` here would let the scripted baseline hear perfectly and make the audio decorative.
         customer = " ".join(call.said("customer"))
         last = call.last("customer")
-        latest = last.spoken if last else ""
+        latest = last.as_heard if last else ""
         pick = -1 if self.careful else 0
 
         if not call.turns:

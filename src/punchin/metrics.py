@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections import Counter
 from statistics import mean
 from typing import Any
 
 from punchin.call import Call
 from punchin.customer import FILLERS
-from punchin.scenarios import Scenario
+from punchin.dms import normalize_reg
+from punchin.scenarios import Scenario, regs_mentioned
 
 TIME_SENTENCE = re.compile(r"[^.!?]*\b(?:kl\.?|klokken)\b[^.!?]*", re.I)
 SPELLED = "otte|ni|ti|elleve|tolv|tretten|fjorten|femten|ét"
@@ -29,6 +31,32 @@ def options_offered(text: str) -> int:
     flat = re.sub(r"\bkl\.", "kl", text)
     flat = re.sub(r"(\d)\.(\d{2})\b", r"\1:\2", flat)
     return max((len(TIME_TOKEN.findall(s)) for s in TIME_SENTENCE.findall(flat)), default=0)
+
+
+def entities(call: Call, scenario: Scenario) -> dict[str, Any]:
+    """What the plate survived. Empty of meaning until the call went through a recogniser.
+
+    The customer said a plate; the question is whether that plate is the one the agent looked up and
+    booked. A lookup on a mangled plate is not a silent failure — it errors — but a mangled plate that
+    still matches a real vehicle is, and that is the one worth counting.
+    """
+    truth = scenario.goal.reg
+    spoken = any(truth in regs_mentioned(t.spoken) for t in call.turns if t.speaker == "customer")
+    heard = any(truth in regs_mentioned(t.as_heard) for t in call.turns if t.speaker == "customer")
+    looked_up = [
+        normalize_reg(str(c.arguments.get("reg", "")))
+        for t in call.turns
+        for c in t.tool_calls
+        if c.tool == "lookup_vehicle"
+    ]
+    booked = [normalize_reg(str(b.get("reg", ""))) for b in call.bookings]
+    return {
+        "reg_spoken": spoken,
+        "reg_heard": heard,  # False means the recogniser lost it between her mouth and the agent
+        "reg_survived": bool(looked_up) and looked_up[-1] == truth,
+        "reg_booked_right": all(reg == truth for reg in booked),
+        "lookup_attempts": len(looked_up),
+    }
 
 
 def outcome(call: Call, scenario: Scenario) -> dict[str, Any]:
@@ -50,6 +78,16 @@ def outcome(call: Call, scenario: Scenario) -> dict[str, Any]:
     }
 
 
+def _mean_or_none(values: list[int]) -> int | None:
+    return round(mean(values)) if values else None
+
+
+def _most_repeated(turns: list[Any]) -> int:
+    """How many times the agent said the same thing. Anything above 1 is a caller losing patience."""
+    said = Counter(" ".join(t.spoken.lower().split()) for t in turns)
+    return max(said.values()) if said else 0
+
+
 def feel(call: Call) -> dict[str, Any]:
     agent = [t for t in call.turns if t.speaker == "agent"]
     customer = [t for t in call.turns if t.speaker == "customer"]
@@ -61,6 +99,8 @@ def feel(call: Call) -> dict[str, Any]:
         "options_max": max((options_offered(t.spoken) for t in agent), default=0),
         "questions_per_turn_max": max((t.spoken.count("?") for t in agent), default=0),
         "customer_stalls": sum(t.spoken in FILLERS for t in customer),
+        "agent_repeats": _most_repeated(agent),
+        "customer_ms_mean": _mean_or_none([t.audio_ms for t in customer if t.audio_ms]),
         "ended_by": call.notes.get("ended_by"),
         "model_ms_mean": round(mean(latencies)) if latencies else None,
         "model_ms_max": max(latencies) if latencies else None,
@@ -69,10 +109,9 @@ def feel(call: Call) -> dict[str, Any]:
 
 
 def summarize(call: Call, scenario: Scenario) -> dict[str, Any]:
-    return {
-        "call": call.id,
-        "scenario": scenario.id,
-        "agent": call.agent,
-        **outcome(call, scenario),
-        **feel(call),
-    }
+    row: dict[str, Any] = {"call": call.id, "scenario": scenario.id, "agent": call.agent}
+    row |= outcome(call, scenario)
+    row |= feel(call)
+    if any(turn.heard is not None for turn in call.turns):
+        row |= entities(call, scenario)  # only means anything once a recogniser sat in the middle
+    return row

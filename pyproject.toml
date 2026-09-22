@@ -31,6 +31,12 @@ punchin = "punchin.cli:main"
 [project.urls]
 Repository = "https://github.com/devjoinedthechat/punchin"
 
+[project.optional-dependencies]
+audio = [
+    "faster-whisper>=1.2",
+    "numpy>=1.26",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.16,<0.13.0"]
 build-backend = "uv_build"
@@ -46,6 +52,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "-p", "no:cacheprovider"]
+markers = ["slow: needs a recogniser model on disk"]
 
 [tool.ruff]
 line-length = 110
@@ -61,3 +68,8 @@ ignore = ["PLR0911", "PLR0912", "PLR0913", "PLR2004", "TRY003"]
 [tool.mypy]
 strict = true
 packages = ["punchin"]
+
+[[tool.mypy.overrides]]
+# Only the optional audio path imports it, and it ships no stubs.
+module = "faster_whisper.*"
+ignore_missing_imports = true

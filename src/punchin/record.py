@@ -42,7 +42,16 @@ def converse(
             call.notes["ended_by"] = "customer"
             break
         call.turns.append(
-            Turn(index=len(call.turns), speaker="customer", text=answer, started_at=at, ended_at=now())
+            Turn(
+                index=len(call.turns),
+                speaker="customer",
+                text=answer.text,
+                started_at=at,
+                ended_at=now(),
+                audio=answer.audio,
+                heard=answer.heard,
+                audio_ms=answer.audio_ms,
+            )
         )
         if turn.ends_call:
             call.notes["ended_by"] = "agent"

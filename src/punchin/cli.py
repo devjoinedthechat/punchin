@@ -9,7 +9,7 @@ from pathlib import Path
 from punchin import __version__
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
-from punchin.customer import ScriptedCustomer
+from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, serve
 from punchin.fidelity import teacher_forced
 from punchin.fork import Budget, agent_turns, fork
@@ -17,7 +17,7 @@ from punchin.goal import extract, score
 from punchin.metrics import summarize
 from punchin.model import ClaudeCodeModel, Model
 from punchin.record import record
-from punchin.scenarios import BY_ID, SCENARIOS, GoalState
+from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario
 
 DEFAULT_OUT = Path(".punchin/calls")
 
@@ -38,6 +38,8 @@ def show(call: Call) -> str:
         who = "Agent" if turn.speaker == "agent" else "Kunde"
         took = f"  ({turn.model_ms} ms)" if turn.model_ms else ""
         lines.append(f"  {turn.index:2} {who} {turn.spoken}{took}")
+        if turn.heard is not None and turn.heard.strip() != turn.spoken.strip():
+            lines.append(f"      heard: {turn.heard}")
         lines.extend(
             f"         -> {c.tool}({c.arguments}) {'ERROR ' + c.error if c.error else ''}"
             for c in turn.tool_calls
@@ -58,6 +60,24 @@ def cmd_scenarios(_: argparse.Namespace) -> int:
     return 0
 
 
+def customer_for(args: argparse.Namespace, scenario: Scenario, out: Path) -> Customer:
+    spoken = ScriptedCustomer(scenario)
+    if not args.audio:
+        return spoken
+    from punchin.audio import AudioCustomer, available, recognizer  # noqa: PLC0415 - optional extra
+
+    ready, missing = available()
+    if not ready:
+        raise SystemExit(f"--audio needs: {missing}")
+    return AudioCustomer(
+        spoken,
+        recognizer(args.whisper),
+        out / "audio",
+        over_the_phone=not args.studio,
+        snr_db=args.snr_db,
+    )
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     chosen = SCENARIOS if args.scenario == "all" else [BY_ID[args.scenario]]
     out = Path(args.out)
@@ -65,7 +85,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     state = out / ".dms-state.json"
     for scenario in chosen:
         agent = agent_for(args.agent, args.model)
-        call = record(scenario, agent, ScriptedCustomer(scenario), state, out)
+        call = record(scenario, agent, customer_for(args, scenario, out), state, out)
         print(show(call))
         print()
     state.unlink(missing_ok=True)
@@ -108,25 +128,29 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
     return 0
 
 
+BASE_COLUMNS = [
+    "scenario",
+    "correct",
+    "day_ok",
+    "turns",
+    "options_max",
+    "agent_repeats",
+    "customer_stalls",
+    "ended_by",
+    "cost_usd",
+]
+HEARD_COLUMNS = ["reg_heard", "reg_survived", "lookup_attempts"]
+
+
 def cmd_metrics(args: argparse.Namespace) -> int:
-    rows = [summarize(Call.load(Path(p)), BY_ID[Call.load(Path(p)).scenario]) for p in args.call]
-    keys = [
-        "scenario",
-        "agent",
-        "correct",
-        "day_ok",
-        "note_ok",
-        "turns",
-        "agent_words_max",
-        "options_max",
-        "customer_stalls",
-        "ended_by",
-        "model_ms_mean",
-        "cost_usd",
-    ]
-    print("  ".join(f"{k:>15}" for k in keys))
+    calls = [Call.load(Path(path)) for path in args.call]
+    rows = [summarize(call, BY_ID[call.scenario]) for call in calls]
+    keys = list(BASE_COLUMNS)
+    if any(key in row for row in rows for key in HEARD_COLUMNS):
+        keys += HEARD_COLUMNS  # only there when a recogniser sat in the middle
+    print("  ".join(f"{key:>16}" for key in keys))
     for row in rows:
-        print("  ".join(f"{str(row.get(k, ''))[:15]:>15}" for k in keys))
+        print("  ".join(f"{str(row.get(key, '-'))[:16]:>16}" for key in keys))
     return 0
 
 
@@ -174,6 +198,10 @@ def parser() -> argparse.ArgumentParser:
     rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
     rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
     rec.add_argument("--out", default=str(DEFAULT_OUT))
+    rec.add_argument("--audio", action="store_true", help="speak the customer aloud and hear it back")
+    rec.add_argument("--studio", action="store_true", help="skip the phone band; a clean microphone")
+    rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
+    rec.add_argument("--whisper", default="small", help="recogniser size: base loses Danish plates")
     rec.set_defaults(run=cmd_record)
 
     sh = commands.add_parser("show", help="print a recorded call")

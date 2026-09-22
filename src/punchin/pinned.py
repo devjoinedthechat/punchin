@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from punchin.call import Call
+from punchin.customer import CustomerTurn
 from punchin.model import Model
 from punchin.scenarios import WEEKDAYS, GoalState
 
@@ -80,11 +81,11 @@ class PinnedCustomer:
         self.cost_usd += done.cost_usd
         return done.text.strip()
 
-    def respond(self, call: Call) -> str | None:
+    def respond(self, call: Call) -> CustomerTurn | None:
         if self.hung_up:
             return None
         said = self.line(call)
         if said.endswith(HANGUP):
             self.hung_up = True
             said = said.removesuffix(HANGUP).strip()
-        return said or None
+        return CustomerTurn(said) if said else None
