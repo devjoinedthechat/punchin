@@ -23,6 +23,13 @@ class CustomerTurn:
 
 
 class Customer(Protocol):
+    """The other side of the call: a script, a simulator pinned to a real customer, or either of
+    those spoken aloud and heard back through a recogniser.
+
+    Whatever it returns is the answer key. A wrapper may add what a recogniser made of it, but the
+    words on `CustomerTurn.text` are what the customer really said, and graders score against those.
+    """
+
     name: str
 
     def respond(self, call: Call) -> CustomerTurn | None:

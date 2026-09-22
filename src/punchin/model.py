@@ -41,6 +41,13 @@ class Completion:
 
 
 class Model(Protocol):
+    """One completion at a time. Used for the pinned customer and for goal extraction, and by
+    `ModelAgent` for the agent itself.
+
+    Stateless on purpose: every call carries its whole prompt, so a fork can re-ask for turn 7 without
+    a session that remembers turns 1 to 6 of a conversation that no longer happened.
+    """
+
     name: str
 
     def complete(

@@ -52,6 +52,8 @@ class Lead:
 
 @dataclass
 class AgentTurn:
+    """One line from an agent, with what it cost to produce and what it did to the world."""
+
     text: str
     tool_calls: list[ToolCall] = field(default_factory=list)
     model_ms: int | None = None
@@ -59,9 +61,21 @@ class AgentTurn:
 
 
 class Agent(Protocol):
+    """Whatever is being tested: one line at a time, given the call so far.
+
+    `call` holds what the agent HEARD, never what was said — `Call.transcript()` and `Call.said()`
+    default to the recogniser's version for exactly this reason. Reading `Turn.spoken` here would let
+    an agent hear perfectly through a bad line and make every audio measurement meaningless.
+
+    An agent may call the dealership system through `dms`; it is never asked what it called, because
+    punchin reads that system's own log around the turn instead.
+    """
+
     name: str
 
-    def respond(self, call: Call, lead: Lead, dms: Dms) -> AgentTurn: ...
+    def respond(self, call: Call, lead: Lead, dms: Dms) -> AgentTurn:
+        """The next thing this agent says out loud, and what it cost."""
+        ...
 
 
 # -- scripted ---------------------------------------------------------------------------------------------
