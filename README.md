@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-135-brightgreen" alt="135 tests">
+  <img src="https://img.shields.io/badge/tests-142-brightgreen" alt="142 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -399,13 +399,30 @@ natural sentence is marked down for it. On a recording made by a model, where th
 conversational, the same measurement gives 0.80. What the number is genuinely good for is a change to
 the simulator: run it before and after, on the same recordings.
 
-```
-$ punchin fidelity <call> --goal truth --ablate
+### What each part of the goal state is worth
+
+```sh
+punchin fidelity <call> --goal truth --ablate --repeat 3
 ```
 
-drops one part of the goal state at a time and reports what each was worth. A field that costs ~0.00 to
-remove is one the simulator was never using, and it should come out of the schema rather than stay
-there looking principled.
+drops one part of the goal state at a time and measures each arm several times:
+
+```
+  everything            jaccard 0.71  spread 0.09  (0.66 0.75 0.71)
+  without mood          jaccard 0.68  spread 0.07  (0.71 0.64 0.68)   worth under the noise
+  without manner        jaccard 0.61  spread 0.06  (0.58 0.64 0.61)   worth +0.10
+  noise floor 0.09 (the widest spread any one arm showed)
+```
+
+The repeats are not optional politeness. The simulator is sampled, and the same call with the same goal
+state has come back anywhere from 0.60 to 0.80 — so a single-run ablation produced a table showing four
+of six fields as actively harmful, which was the sampler and not the fields. Anything that cannot clear
+the noise floor is printed as **under the noise** rather than as a number, because a delta that cannot
+beat its own sampler is not a finding and the tool should say so rather than leave a reader to do the
+arithmetic.
+
+A field that stays under the noise across repeats is one the simulator was never using, and it should
+come out of the schema rather than sit there looking principled.
 
 The same run also grades the extraction that produced the goal state, against the corpus truth: on the
 headline call it recovered the plate and the *corrected* Wednesday, not the Tuesday she took back.
