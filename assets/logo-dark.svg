@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112" width="112" height="112" role="img" aria-label="punchin">
+  <g fill="none" stroke="#e8e8e8" stroke-width="7" stroke-linecap="round">
+    <path d="M14 46v20M30 36v40M46 28v56"/>
+  </g>
+  <path d="M62 18v76" stroke="#fb923c" stroke-width="9" stroke-linecap="round"/>
+  <g fill="none" stroke="#e8e8e8" stroke-width="7" stroke-linecap="round" opacity="0.28">
+    <path d="M78 30v52M94 42v28"/>
+  </g>
+</svg>

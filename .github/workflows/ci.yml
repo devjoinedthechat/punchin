@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - run: uv run ruff format --check src tests
+      - run: uv run ruff check src tests
+      - run: uv run mypy
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      # No API key and no `claude` binary here: the model backend is exercised through a scripted
+      # stand-in that speaks Claude Code's stream-json, so CI runs the whole path and spends nothing.
+      - run: uv run --isolated -p ${{ matrix.python }} --with pytest --with-editable . pytest -q
+
+  corpus:
+    # Every scenario, end to end, with the scripted pair. `careful` must reach the expected outcome on
+    # all ten and `careless` must miss; if a change makes them agree, the corpus has stopped measuring.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - run: uv run punchin record --agent careful --out .punchin/ci
+      - run: uv run punchin metrics .punchin/ci/*.json >> "$GITHUB_STEP_SUMMARY"

@@ -50,6 +50,8 @@ class GoalState(BaseModel):
     extras: list[str] = []  # things the workshop should know: a noise, a courtesy car
     formality: Formality = "informal"
     mood: str = "neutral"
+    prefers_time: str | None = None  # a time of day the customer asked for, in their own words
+    manner: list[str] = []  # how they talk: self-corrections, everything at once, one word at a time
     reveals: list[str] = []  # the facts in the order the customer brought them up, when extracted from a call
 
 
@@ -99,7 +101,14 @@ SCENARIOS: list[Scenario] = [
         id="self-correction",
         pattern="self_correction",
         vehicle=_vehicle("AB12345", "Škoda", "Octavia", 2019, "Mette Kjær"),
-        goal=GoalState(intent="book syn", reg="AB12345", wants_day=WED, mood="a bit distracted"),
+        goal=GoalState(
+            intent="book syn",
+            reg="AB12345",
+            wants_day=WED,
+            mood="a bit distracted",
+            prefers_time="den tidligste",
+            manner=["retter sig selv om dagen"],
+        ),
         script=[
             Line("Ja hej. Ja, det er fint, den skal til syn.", when=None),
             Line("Det er AB 12 345.", when=ASKED_REG),
@@ -116,7 +125,7 @@ SCENARIOS: list[Scenario] = [
         id="plain-booking",
         pattern="plain",
         vehicle=_vehicle("CD67890", "Toyota", "Yaris", 2021, "Jonas Berg"),
-        goal=GoalState(intent="book syn", reg="CD67890", wants_day=THU),
+        goal=GoalState(intent="book syn", reg="CD67890", wants_day=THU, prefers_time="formiddag"),
         script=[
             Line("Hej, ja det passer fint.", when=None),
             Line("CD 67 890.", when=ASKED_REG),
@@ -187,7 +196,12 @@ SCENARIOS: list[Scenario] = [
         id="wrong-reg-first",
         pattern="wrong_reg_first",
         vehicle=_vehicle("KL99001", "Ford", "Focus", 2016, "Søren Lund"),
-        goal=GoalState(intent="book syn", reg="KL99001", wants_day=WED),
+        goal=GoalState(
+            intent="book syn",
+            reg="KL99001",
+            wants_day=WED,
+            manner=["siger nummerpladen forkert og retter den"],
+        ),
         script=[
             Line("Ja hej, det passer.", when=None),
             Line("KL 99 010... nej, KL 99 001. Undskyld.", when=ASKED_REG),
@@ -260,7 +274,14 @@ SCENARIOS: list[Scenario] = [
         id="hurried",
         pattern="hurried",
         vehicle=_vehicle("ST33445", "BMW", "118i", 2020, "Rasmus Vinther"),
-        goal=GoalState(intent="book syn", reg="ST33445", wants_day=FRI, mood="in a hurry"),
+        goal=GoalState(
+            intent="book syn",
+            reg="ST33445",
+            wants_day=FRI,
+            mood="in a hurry",
+            prefers_time="den første, lige meget hvilken",
+            manner=["siger det hele i én sætning"],
+        ),
         script=[
             Line("Ja, jeg har lidt travlt. Bare book noget fredag, ST 33 445.", when=None),
             Line("Den første, bare.", when=CHOOSE_TIME),

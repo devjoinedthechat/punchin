@@ -129,15 +129,18 @@ class ClaudeCodeModel:
                 config = Path(cwd) / "mcp.json"
                 config.write_text(json.dumps(mcp))
             started = time.monotonic()
-            done = subprocess.run(  # noqa: S603 - the command is Claude Code, chosen by the caller
-                self._arguments(system, prompt, config, schema),
-                cwd=cwd,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_s,
-                check=False,
-            )
+            try:
+                done = subprocess.run(  # noqa: S603 - the command is Claude Code, chosen by the caller
+                    self._arguments(system, prompt, config, schema),
+                    cwd=cwd,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_s,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as expired:
+                raise TimeoutError(f"Claude Code did not answer in {self.timeout_s:.0f}s") from expired
             elapsed = int((time.monotonic() - started) * 1000)
         completion = self._read(done.stdout, done.stderr)
         completion.elapsed_ms = elapsed

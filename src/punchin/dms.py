@@ -120,7 +120,16 @@ class Dms:
     ) -> None:
         state.calls.append({"tool": tool, "arguments": arguments, "result": result, "error": error})
 
+    DATES = ("date_from", "date_to")
+
     def call(self, tool: str, **arguments: Any) -> dict[str, Any]:
+        # A recording stores arguments as JSON, so replaying one hands back "2026-09-30" where the
+        # tool wants a date. Without this, every fork whose prefix searched for slots dies comparing
+        # a string to a date.
+        arguments = {
+            key: dt.date.fromisoformat(value) if key in self.DATES and isinstance(value, str) else value
+            for key, value in arguments.items()
+        }
         state = self.load()
         handler: Callable[..., dict[str, Any]] = getattr(self, f"_{tool}")
         try:

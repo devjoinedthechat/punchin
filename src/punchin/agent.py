@@ -69,6 +69,28 @@ class Agent(Protocol):
 EXTRAS = {"lånebil": r"lånebil", "stor service": r"stor(e)? service|big one"}
 
 
+def _results(call: Call, tool: str) -> list[dict[str, Any]]:
+    return [
+        c.result
+        for t in call.turns
+        for c in t.tool_calls
+        if c.tool == tool and c.error is None and isinstance(c.result, dict)
+    ]
+
+
+def _looked_up(call: Call) -> dict[str, Any] | None:
+    """The vehicle the agent has already found in this conversation, if any."""
+    found = _results(call, "lookup_vehicle")
+    return found[-1] if found else None
+
+
+def _offered(call: Call) -> dict[str, Any] | None:
+    """The slot the agent has already put to the customer: the first of the last search it ran."""
+    searches = _results(call, "find_slots")
+    slots = searches[-1].get("slots", []) if searches else []
+    return dict(slots[0]) if slots else None
+
+
 class ScriptedAgent:
     """A fixed policy. `careful=True` is the good agent; `careful=False` makes the built-in mistakes:
     the first day said instead of the last, the first plate instead of the corrected one, no note,
@@ -92,6 +114,10 @@ class ScriptedAgent:
 
     def respond(self, call: Call, lead: Lead, dms: Dms) -> AgentTurn:
         self.calls = []
+        # Read back out of the call, never kept on the instance: a fork hands this agent a conversation
+        # it never had, and an agent that trusted its own memory would answer for the wrong one.
+        self.vehicle = _looked_up(call)
+        self.offered = _offered(call)
         text = self._policy(call, lead, dms)
         return AgentTurn(text, self.calls)
 
@@ -191,10 +217,11 @@ def mcp_config(dms: Dms) -> dict[str, Any]:
 
 
 class ModelAgent:
-    def __init__(self, model: Model, today: dt.date) -> None:
+    def __init__(self, model: Model, today: dt.date, *, system_suffix: str = "") -> None:
         self.model = model
         self.today = today
-        self.name = f"agent:{model.name}"
+        self.system_suffix = system_suffix
+        self.name = f"agent:{model.name}" + ("+suffix" if system_suffix else "")
 
     def respond(self, call: Call, lead: Lead, dms: Dms) -> AgentTurn:
         prompt = (
@@ -203,5 +230,7 @@ class ModelAgent:
             else PROMPT_NEXT.format(transcript=call.transcript())
         )
         system = SYSTEM.format(today=say_date(self.today))
+        if self.system_suffix:
+            system = f"{system}\n{self.system_suffix}\n"
         done = self.model.complete(system, prompt, mcp=mcp_config(dms))
         return AgentTurn(done.text.strip(), done.tool_calls, done.elapsed_ms, done.cost_usd)

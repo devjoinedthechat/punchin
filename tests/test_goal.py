@@ -10,11 +10,26 @@ def test_a_line_reveals_the_facts_it_contains_and_nothing_else() -> None:
     assert facts(GOAL, "Det er AB 12 345.") == {"reg"}
     assert facts(GOAL, "Kan jeg få en tid tirsdag? ...nej vent, onsdag.") == {"day", "no"}
     assert facts(GOAL, "Kan jeg få en tid tirsdag?") == set()  # the wrong day is not the customer's fact
-    assert facts(GOAL, "Ja tak, det passer.") == {"yes", "bye"}
+    assert facts(GOAL, "Ja tak, det passer.") == {"yes"}
     assert facts(BY_ID["courtesy-car"].goal, "Jeg skal have en lånebil imens.") == {
         "constraint:skal have lånebil",
         "extra:lånebil",
     }
+
+
+def test_a_greeting_is_not_a_farewell() -> None:
+    """'Hej' opens a Danish call as often as it ends one, and 'tak' is politeness anywhere in it."""
+    assert "bye" not in facts(GOAL, "Ja, det er mig. Hej.")
+    assert "bye" not in facts(GOAL, "Ja tak, det passer.")
+    assert facts(GOAL, "Tak, hej hej.") == {"bye"}
+    assert facts(GOAL, "Fint, farvel.") == {"yes", "bye"}
+
+
+def test_a_turn_that_is_only_a_time_preference_is_not_an_empty_turn() -> None:
+    """Against an empty set a faithful line scores zero; that was the metric, not the simulator."""
+    assert "time" in facts(GOAL, "Bare den tidligste, klokken 8.")
+    assert "time" in facts(GOAL, "Øh ja, klokken 8 passer fint.")
+    assert "time" not in facts(BY_ID["proxy-caller"].goal, "Klokken 8.")  # that customer stated no preference
 
 
 def test_scoring_against_the_truth() -> None:

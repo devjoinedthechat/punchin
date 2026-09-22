@@ -34,6 +34,15 @@ SCHEMA: dict[str, Any] = {
             "description": "Things the workshop should know",
         },
         "formality": {"type": "string", "enum": ["informal", "formal"]},
+        "prefers_time": {
+            "type": ["string", "null"],
+            "description": "A time of day the customer asked for, in their own Danish words; null if none",
+        },
+        "manner": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "How they talk, in Danish: 'retter sig selv om dagen', 'siger alt i én sætning'",
+        },
         "mood": {"type": "string", "description": "How the customer came across, in a few words"},
         "reveals": {
             "type": "array",
@@ -41,7 +50,18 @@ SCHEMA: dict[str, Any] = {
             "description": "The facts above, in the order the customer first said them: ['reg', 'day', ...]",
         },
     },
-    "required": ["intent", "reg", "wants_day", "constraints", "extras", "formality", "mood", "reveals"],
+    "required": [
+        "intent",
+        "reg",
+        "wants_day",
+        "constraints",
+        "extras",
+        "formality",
+        "mood",
+        "prefers_time",
+        "manner",
+        "reveals",
+    ],
     "additionalProperties": False,
 }
 
@@ -51,6 +71,10 @@ write down the customer's goal state: what they wanted, what they knew, what the
 talked. Only what the customer said or clearly meant counts; nothing the agent said or did is evidence of
 what the customer wanted. When the customer corrects themselves, the correction is what they meant.
 Weekdays are resolved against today's date, given in the prompt; 'næste uge' means the week after this one.
+
+Write down how they talked as well as what they said: if they corrected themselves, said everything in one
+breath, or asked for a particular time of day, that is part of who this customer is and belongs in `manner`
+and `prefers_time`. Describe the habit, never quote the line.
 """
 
 PROMPT = "Today is {today} ({weekday}).\n\nTranscript:\n\n{transcript}\n\nWrite the customer's goal state."
@@ -69,11 +93,18 @@ def extract(call: Call, model: Model, today: dt.date) -> tuple[GoalState, float]
     return GoalState.model_validate(raw), done.cost_usd
 
 
-YES = re.compile(r"\b(ja|yes|jo|fint|okay|ok|gerne)\b", re.I)
-NO = re.compile(r"\b(nej|no|ikke)\b", re.I)
-BYE = re.compile(r"\b(hej hej|farvel|tak)\b|\bhej\.?$", re.I)
+YES = re.compile(r"\b(ja|jo|yes|fint|okay|ok|gerne|perfekt)\b", re.I)
+NO = re.compile(r"\b(nej|no|ikke|vent)\b", re.I)
+# Only an actual parting. A bare "hej" opens a Danish call as often as it closes one, and "tak" is
+# politeness anywhere in it; both fired on greetings and scored a faithful line as a miss.
+BYE = re.compile(r"\bhej hej\b|\bfarvel\b|\bvi ses\b|\bha'? det\b|\bhav en god\b", re.I)
 ROBOT = re.compile(r"\brobot\b", re.I)
 NEXT_WEEK = re.compile(r"næste uge|ikke i denne uge", re.I)
+TIME = re.compile(
+    r"\b\d{1,2}[:.]\d{2}\b|\bkl\.?\s*\d{1,2}\b|\bklokken\b|\btidlig\w*|\bformiddag\b"
+    r"|\beftermiddag\b|\bmorgen\w*|\bførste\b|\bsen\w*\b",
+    re.I,
+)
 
 
 def facts(goal: GoalState, text: str) -> set[str]:
@@ -85,6 +116,8 @@ def facts(goal: GoalState, text: str) -> set[str]:
         found.add("day")
     if NEXT_WEEK.search(text):
         found.add("next_week")
+    if goal.prefers_time and TIME.search(text):
+        found.add("time")  # a turn that is only a time preference scored as saying nothing at all
     for kind, items in (("constraint", goal.constraints), ("extra", goal.extras)):
         for item in items:
             words = [w for w in re.findall(r"\w+", item.lower()) if len(w) >= 4]

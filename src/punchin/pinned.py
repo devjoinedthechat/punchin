@@ -18,6 +18,10 @@ tingene i den rækkefølge, de står i under "Rækkefølge", medmindre agenten s
 Sig kun det, der er relevant for det, agenten lige har sagt; svar på ét spørgsmål ad gangen, kort, som
 man taler i telefon. Hold tonen: {formality_da}, og {mood}.
 
+Tal som folk taler i telefon, ikke som man skriver: ufærdige sætninger, "øh", "altså". Står der noget
+under "sådan taler kunden", så gør det — retter kunden sig selv, så sig først det forkerte og ret det
+bagefter i samme replik. En replik, der er for pæn og for færdig, er forkert.
+
 Når agenten siger farvel, så sig farvel og afslut din replik med præcis dette: {hangup}
 Ingen anførselstegn, ingen forklaringer, ingen regibemærkninger.
 """
@@ -29,6 +33,8 @@ Kunden:
 - ønsket dag: {day}
 - betingelser: {constraints}
 - værkstedet skal vide: {extras}
+- tidspunkt på dagen: {prefers_time}
+- sådan taler kunden: {manner}
 
 Rækkefølge: {reveals}
 
@@ -64,6 +70,8 @@ class PinnedCustomer:
             day=day,
             constraints=", ".join(goal.constraints) or "ingen",
             extras=", ".join(goal.extras) or "ikke noget",
+            prefers_time=goal.prefers_time or "lige meget",
+            manner=", ".join(goal.manner) or "helt almindeligt",
             reveals=", ".join(goal.reveals) or "som det falder naturligt",
             transcript=call.transcript() or "(agenten har ikke sagt noget endnu)",
         )

@@ -12,6 +12,7 @@ from punchin.call import Call
 from punchin.customer import ScriptedCustomer
 from punchin.dms import TODAY, serve
 from punchin.fidelity import teacher_forced
+from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
 from punchin.metrics import summarize
 from punchin.model import ClaudeCodeModel, Model
@@ -34,13 +35,14 @@ def agent_for(name: str, model: str) -> Agent:
 def show(call: Call) -> str:
     lines = [f"{call.id}  scenario={call.scenario}  agent={call.agent}  cost=${call.cost_usd:.3f}"]
     for turn in call.turns:
-        who = "Agent " if turn.speaker == "agent" else "Kunde "
+        who = "Agent" if turn.speaker == "agent" else "Kunde"
         took = f"  ({turn.model_ms} ms)" if turn.model_ms else ""
-        lines.append(f"  {who} {turn.spoken}{took}")
+        lines.append(f"  {turn.index:2} {who} {turn.spoken}{took}")
         lines.extend(
             f"         -> {c.tool}({c.arguments}) {'ERROR ' + c.error if c.error else ''}"
             for c in turn.tool_calls
         )
+    lines.append(f"  fork points (agent turns): {', '.join(str(i) for i in agent_turns(call))}")
     outcome = ", ".join(
         f"{b['reg']} {b['date']} {b['time']}{' note=' + b['note'] if b['note'] else ''}"
         for b in call.bookings
@@ -128,6 +130,33 @@ def cmd_metrics(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fork(args: argparse.Namespace) -> int:
+    call = Call.load(Path(args.call))
+    scenario = BY_ID[call.scenario]
+    model = model_for(args)
+    goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
+    agent = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
+    changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"model {args.model}"
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    report = fork(
+        call,
+        scenario,
+        args.at,
+        agent=agent,
+        goal=goal,
+        model=model,
+        state_path=out / ".dms-state.json",
+        repeat=args.repeat,
+        changed=changed,
+        budget=Budget(args.max_usd),
+        out=out,
+    )
+    (out / ".dms-state.json").unlink(missing_ok=True)
+    print(report.text())
+    return 0 if report.fixed == len(report.attempts) and report.attempts else 1
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     serve(Path(args.state))
     return 0
@@ -161,6 +190,17 @@ def parser() -> argparse.ArgumentParser:
         if name == "fidelity":
             sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
         sub.set_defaults(run=run)
+
+    fk = commands.add_parser("fork", help="re-run a recorded call from one turn with the change applied")
+    fk.add_argument("call")
+    fk.add_argument("--at", type=int, required=True, help="the agent turn to fork at (see `punchin show`)")
+    fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
+    fk.add_argument("--system-suffix", default="", help="the prompt change under test")
+    fk.add_argument("--model", default="claude-sonnet-5")
+    fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+    fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
+    fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
+    fk.set_defaults(run=cmd_fork)
 
     met = commands.add_parser("metrics", help="outcome and feel numbers for recorded calls")
     met.add_argument("call", nargs="+")
