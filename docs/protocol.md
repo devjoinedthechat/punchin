@@ -107,3 +107,23 @@ recognisable speaker at all is refused with the names it saw.
 The scenario it writes is the part a transcript cannot supply: the plate, the day the customer meant,
 whether a booking should have happened, and anything the workshop needed to know. Every command then
 finds it through `--scenarios`.
+
+## Checking that a fork of your agent tells the truth
+
+`punchin soundness` compares three things: a full live re-run, a fork continued by the same script, and
+a fork continued by the pinned customer. With `--agent command` both the baseline and the changed agent
+are yours, so the change under test is a different command rather than a different prompt:
+
+```sh
+punchin soundness --scenario self-correction --at 4 --trials 3 --agent command \
+  --baseline-command "python my_agent.py" \
+  --agent-command    "python my_agent_fixed.py"
+```
+
+The baseline command should be the agent the recording was made with, and the changed one the agent you
+believe fixes it. Only the simulated customer spends money; both agents are yours.
+
+Two things to know before reading the output. A scenario needs a script for this, because there has to
+be a live re-run to compare the fork against — an imported call cannot be checked this way. And if every
+arm comes out at 0 or 100 per cent, the run agreed without much chance to do otherwise; a weaker model
+or a subtler change gives the partial rates that actually discriminate.

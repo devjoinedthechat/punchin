@@ -166,3 +166,79 @@ def test_a_run_where_every_arm_sat_at_its_ceiling_says_so(tmp_path: Path) -> Non
     from punchin.soundness import summarise_soundness
 
     assert "ceiling" in summarise_soundness([_measure(tmp_path)])
+
+
+BASELINE_AGENT = """
+import json, sys
+json.load(sys.stdin)
+print(json.dumps({"text": "Jeg booker bare noget. [FARVEL]"}))
+"""
+CHANGED_AGENT = """
+import json, sys
+json.load(sys.stdin)
+print(json.dumps({"text": "Hvilken dag passer dig? [FARVEL]"}))
+"""
+
+
+def test_soundness_can_be_run_on_an_agent_punchin_does_not_own(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """The check that makes the tool credible has to work on your agent, not only on punchin's."""
+    from punchin.cli import main
+
+    before, after = tmp_path / "before.py", tmp_path / "after.py"
+    before.write_text(BASELINE_AGENT)
+    after.write_text(CHANGED_AGENT)
+
+    code = main(
+        [
+            "soundness",
+            "--scenario",
+            "self-correction",
+            "--trials",
+            "1",
+            "--at",
+            "0",
+            "--agent",
+            "command",
+            "--baseline-command",
+            f"{sys.executable} {before}",
+            "--agent-command",
+            f"{sys.executable} {after}",
+            "--out",
+            str(tmp_path / "out"),
+            "-q",
+        ]
+    )
+    assert code == 0
+    printed = capsys.readouterr().out
+    assert "ground truth" in printed
+    assert "what punchin does" in printed
+    assert str(after) in printed  # the change under test is named
+
+
+def test_an_external_agent_needs_both_sides_of_the_comparison(tmp_path: Path) -> None:
+    from punchin.cli import main
+
+    with pytest.raises(SystemExit, match="needs both"):
+        main(
+            [
+                "soundness",
+                "--scenario",
+                "self-correction",
+                "--agent",
+                "command",
+                "--agent-command",
+                "echo",
+                "--out",
+                str(tmp_path),
+                "-q",
+            ]
+        )
+
+
+def test_a_prompt_change_is_required_when_the_agent_is_punchins_own(tmp_path: Path) -> None:
+    from punchin.cli import main
+
+    with pytest.raises(SystemExit, match="--system-suffix"):
+        main(["soundness", "--scenario", "self-correction", "--out", str(tmp_path), "-q"])

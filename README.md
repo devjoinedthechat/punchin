@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-175-brightgreen" alt="175 tests">
+  <img src="https://img.shields.io/badge/tests-178-brightgreen" alt="178 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -385,8 +385,19 @@ working are unambiguous here, so every arm sits at its ceiling and the run agree
 much chance to do anything else. The case that would really test it is one where the fix works *some*
 of the time — 2 of 3 against 1 of 3 — and engineering that on purpose is hard.
 
-So the number is not the artifact. The check is: three arms, separated, runnable against **your** agent
-and your scenario, on a claim most tools of this kind never state out loud.
+So the number is not the artifact. The check is — and it runs against **your** agent, not only against
+punchin's. For an agent of your own the change under test is a different command rather than a different
+prompt:
+
+```sh
+punchin soundness --scenario self-correction --at 4 --trials 3 --agent command \
+  --baseline-command "python my_agent.py" \
+  --agent-command    "python my_agent_fixed.py"
+```
+
+Only the simulated customer costs anything; both agents are yours and run for free. That is the whole
+claim this tool rests on, offered as something you can falsify on your own code rather than as a
+reassurance in a README.
 
 ## Is the simulated customer the real one?
 

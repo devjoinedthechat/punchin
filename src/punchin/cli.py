@@ -336,12 +336,26 @@ def cmd_soundness(args: argparse.Namespace) -> int:
         chosen = [known[args.scenario]]
     else:
         raise SystemExit(ungraded(args.scenario, Path(args.scenarios)))
-    if not args.system_suffix:
-        raise SystemExit("--system-suffix is the change whose fork is being checked; it is required")
-
     model = model_for(args)
-    changed = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
-    plain = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.baseline_suffix)
+    if args.agent == "command":
+        # Somebody else's agent, where the change is a different command rather than a prompt.
+        if not (args.agent_command and args.baseline_command):
+            raise SystemExit(
+                "--agent command needs both --baseline-command (what the recording was made with) "
+                "and --agent-command (the changed agent whose fork is being checked)"
+            )
+        changed: Agent = CommandAgent(shlex.split(args.agent_command), TODAY, name="command:changed")
+        plain: Agent = CommandAgent(shlex.split(args.baseline_command), TODAY, name="command:baseline")
+        change = args.agent_command
+    else:
+        if not args.system_suffix:
+            raise SystemExit(
+                "--system-suffix is the change whose fork is being checked; it is required, "
+                "unless you are checking your own agent with --agent command"
+            )
+        changed = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
+        plain = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.baseline_suffix)
+        change = args.system_suffix
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     budget = Budget(args.max_usd)
@@ -357,7 +371,7 @@ def cmd_soundness(args: argparse.Namespace) -> int:
             state_path=out / ".dms-state.json",
             at=args.at,
             trials=args.trials,
-            change=args.system_suffix,
+            change=change,
             budget=budget,
             out=out,
         )
@@ -539,8 +553,13 @@ def _add_judging(commands: Commands, common: argparse.ArgumentParser) -> None:
         "soundness", parents=[common], help="check that forking says what a full re-run says"
     )
     snd.add_argument("--scenario", required=True, help="a scenario id, or 'all'")
-    snd.add_argument("--system-suffix", required=True, help="the change whose fork is being checked")
+    snd.add_argument("--system-suffix", default="", help="the prompt change whose fork is being checked")
     snd.add_argument("--baseline-suffix", default="", help="the prompt the recording was made with")
+    snd.add_argument("--agent", default="claude-code", choices=["claude-code", "command"], help="whose agent")
+    snd.add_argument("--agent-command", default="", help="the changed agent, for --agent command")
+    snd.add_argument(
+        "--baseline-command", default="", help="the agent before the change, for --agent command"
+    )
     snd.add_argument("--at", type=int, default=None, help="fork point; the middle of the call by default")
     snd.add_argument("--trials", type=int, default=3)
     snd.add_argument(
