@@ -378,20 +378,37 @@ agent's line before it and asked to write that turn. The real turn is the answer
 randomness never enters, because the agent's lines are always the recorded ones.
 
 ```
-$ punchin fidelity <call> --goal truth
-facts jaccard 0.80, exact 60%, length x1.29, $0.041
+$ punchin fidelity .punchin/calls/*.json --goal truth --summary
 
-   5 ≠ real: Kan jeg få en tid tirsdag? ...nej vent, onsdag. Onsdag er bedre.
-       sim: Øh, tirsdag var jeg tænkt... nej, onsdag - onsdag den 30'te. Og gerne så tidligt som muligt.
-       real ['day', 'no']  sim ['day', 'no', 'time', 'yes']
+  …is-it-a-robot     jaccard 0.83  exact 83%  length x1.94
+  …plain-booking     jaccard 0.83  exact 60%  length x2.13
+  …self-correction   jaccard 0.63  exact 20%  length x1.53
+  …already-booked    jaccard 0.25  exact  0%  length x1.37
+
+10 calls, 47 customer turns: jaccard mean 0.65, median 0.68, range 0.25-0.83; exact 45%; $0.314
 ```
 
-The simulator self-corrects the way she did, and it is still not her: it volunteered a time preference a
-turn earlier than she did, and it says "ja" where she said nothing. That is what 0.80 buys, and the
-number is in the repository so a change to the simulator has to move it.
+Two things only the spread shows, and the reason a single call was never enough. **The simulator is two
+to four times more verbose than the customer it is playing** — the length column, on every call. And it
+is far worse at declining than at agreeing: `already-booked`, where the right move is to say no thank
+you and get off the phone, is 0.25.
 
-The same run also grades the extraction that produced the goal state, against the corpus truth: on this
-call it recovered the plate and the *corrected* Wednesday, not the Tuesday she took back.
+The terseness cuts both ways, so read the number as a floor rather than a verdict. This corpus's
+customers answer in one or two words by construction (*"Ja."*, *"Onsdag."*), and a simulator writing a
+natural sentence is marked down for it. On a recording made by a model, where the agent's own lines are
+conversational, the same measurement gives 0.80. What the number is genuinely good for is a change to
+the simulator: run it before and after, on the same recordings.
+
+```
+$ punchin fidelity <call> --goal truth --ablate
+```
+
+drops one part of the goal state at a time and reports what each was worth. A field that costs ~0.00 to
+remove is one the simulator was never using, and it should come out of the schema rather than stay
+there looking principled.
+
+The same run also grades the extraction that produced the goal state, against the corpus truth: on the
+headline call it recovered the plate and the *corrected* Wednesday, not the Tuesday she took back.
 
 ## The corpus
 
