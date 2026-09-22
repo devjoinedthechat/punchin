@@ -71,8 +71,10 @@ customer asks for Thursday morning. The recogniser hands the agent a fragment:
 
 The model turned half a word into a plausible date and never questioned it. She wanted Thursday the 1st
 and is booked for Friday the 2nd. Every tool call succeeded, so no outcome check fires. The call ends
-politely with one stall and no repetition, so no quality metric fires either. Only the corpus, which
-knows which day she meant, can tell you this call failed.
+politely, and the feel metrics come back at `agent_repeats=1`, `customer_stalls=1` — the floor, and one
+stall. It did in fact ask for the time twice, in two different wordings, and the repeat detector counted
+neither, which is what a hand-written proxy being wrong looks like when you can read the source. Only
+the corpus, which knows which day she meant, can tell you this call failed.
 
 Fork at turn 6 with an instruction to read the day back before acting on it:
 
