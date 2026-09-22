@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-178-brightgreen" alt="178 tests">
+  <img src="https://img.shields.io/badge/tests-193-brightgreen" alt="193 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -131,6 +131,7 @@ local JSON file: no account, no network, no credentials.
 ```sh
 git clone https://github.com/devjoinedthechat/punchin && cd punchin
 uv sync
+uv run punchin doctor                          # what works here, and what to install for the rest
 
 uv run punchin scenarios                       # the corpus and the outcome each call expects
 uv run punchin record --agent careful          # all ten, free and deterministic
@@ -635,6 +636,7 @@ so the whole path runs offline and free. The audio tests skip themselves unless 
 faster-whisper are all present, and `-m slow` holds the two that need a recogniser model on disk.
 
 ```
+punchin doctor             what works on this machine, and what to install for the rest
 punchin scenarios          the corpus, and the outcome each call expects
 punchin import             somebody else's transcript, plus the outcome you say was right
 punchin triage             group the calls that went wrong, biggest group first

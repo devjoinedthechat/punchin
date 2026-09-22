@@ -17,6 +17,7 @@ from punchin.adapter import AgentProtocolError
 from punchin.commands import (
     cmd_check,
     cmd_dms,
+    cmd_doctor,
     cmd_extract,
     cmd_fidelity,
     cmd_fork,
@@ -217,6 +218,13 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
             )
         add_scenario_flag(sub)
         sub.set_defaults(run=run)
+
+    doc = commands.add_parser(
+        "doctor", parents=[common], help="what punchin can do on this machine, and what is missing"
+    )
+    doc.add_argument("--baseline", default="baseline.json")
+    add_scenario_flag(doc)
+    doc.set_defaults(run=cmd_doctor)
 
     dms = commands.add_parser(
         "dms", parents=[common], help="the DMS as an MCP server over stdio (what the model calls)"

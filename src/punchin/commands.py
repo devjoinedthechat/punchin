@@ -18,6 +18,7 @@ from punchin.call import Call
 from punchin.check import baseline_from, by_scenario, check, load_baseline
 from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, normalize_reg, serve
+from punchin.doctor import examine, report
 from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
 from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
@@ -413,6 +414,12 @@ def cmd_player(args: argparse.Namespace) -> int:
     dest = write_player(before, after, Path(args.out), title=args.title)
     print(f"{dest}  ({dest.stat().st_size / 1e6:.1f} MB)")
     return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    findings = examine(Path(args.scenarios), Path(args.baseline))
+    print(report(findings))
+    return 1 if any(f.state == "missing" for f in findings) else 0
 
 
 def cmd_dms(args: argparse.Namespace) -> int:
