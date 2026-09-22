@@ -507,6 +507,14 @@ the customer and the agent, both lines are shown: what she said, and under it wh
   the timings recorded are the model's and the speech's, never a caller's experience of the gap.
 - **One vertical.** The corpus is Danish after-sales booking. The engine takes scenarios as data and is
   not tied to it, but no second vertical is included and none is claimed to work.
+- **The feel metrics are proxies nobody has calibrated.** They are for movement on one call before and
+  after a change, not for scoring an agent. Said at greater length [above](#as-a-gate).
+- **Soundness is checked, not established.** Three trials on one scenario, with both arms at their
+  ceiling, is a check you can run rather than a guarantee anybody should quote. A case where a fix works
+  only some of the time would test it properly, and engineering one on purpose is an open problem.
+- **A scenario's outcome is somebody's judgement.** An imported call is graded against what a person
+  said should have happened. punchin makes that explicit rather than inferring it, which means a wrong
+  judgement produces a confidently wrong grade.
 
 ## Development
 
