@@ -100,6 +100,11 @@ PAGE = """<!doctype html>
   .heard { margin:3px 0 0; font-size:13px; color:var(--bad) }
   .heard b { font-weight:600; font-style:normal }
   .tool { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--dim); margin-top:3px }
+  .bar { height:4px; border-radius:2px; margin-top:5px; background:var(--line); position:relative }
+  .bar i { position:absolute; top:0; bottom:0; border-radius:2px; display:block }
+  .turn.agent .bar i { background:var(--agent) }
+  .turn.kunde .bar i { background:var(--kunde) }
+  .scale { font-size:11px; color:var(--dim); margin:2px 0 8px; font-variant-numeric:tabular-nums }
   .tool.failed { color:var(--bad) }
   button.play { font:inherit; font-size:12px; margin-top:5px; cursor:pointer; color:var(--ink);
                 background:transparent; border:1px solid var(--line); border-radius:999px; padding:2px 10px }
@@ -129,6 +134,17 @@ function turnEl(t, forkedAt) {
        + `${c.failed ? ' ERROR' : ''}</div>`;
   }
   d.innerHTML = h;
+  if (t.ms) {
+    // One row per turn, all on the same scale, so a turn that took four times as long looks it.
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const fill = document.createElement('i');
+    fill.style.left = '0';
+    fill.style.width = Math.max(2, 100 * t.ms / DATA.longest) + '%';
+    fill.title = t.ms + ' ms';
+    bar.appendChild(fill);
+    d.appendChild(bar);
+  }
   if (t.audio) {
     const b = document.createElement('button');
     b.className = 'play'; b.textContent = '▶ play';
@@ -148,8 +164,11 @@ for (const side of DATA.sides) {
   const booked = side.booked.length
     ? side.booked.map(b => `${b.reg} ${b.date} ${b.time}${b.note ? ' · ' + b.note : ''}`).join(', ')
     : 'nothing booked';
+  const seconds = side.turns.reduce((n, t) => n + (t.ms || 0), 0) / 1000;
   col.innerHTML = `<h2>${esc(side.label)}</h2>`
-    + `<div class="meta">${esc(side.agent)} · ended by ${esc(side.endedBy ?? '?')}</div>`;
+    + `<div class="meta">${esc(side.agent)} · ended by ${esc(side.endedBy ?? '?')}`
+    + (seconds ? ` · ${seconds.toFixed(1)}s of turns` : '') + `</div>`
+    + (DATA.longest ? `<div class="scale">bars are to scale, longest turn ${DATA.longest} ms</div>` : '');
   if (side.forkedAt !== null && side.forkedAt !== undefined) {
     const n = document.createElement('div');
     n.className = 'banner';
@@ -171,7 +190,10 @@ for (const side of DATA.sides) {
 
 def build(before: Call, after: Call, *, title: str | None = None) -> str:
     """The page, as one string. Audio is embedded, so the file stands alone."""
-    data = {"sides": [_side(before, "Before"), _side(after, "After")]}
+    sides = [_side(before, "Before"), _side(after, "After")]
+    # One scale across both calls, or the bars would say nothing about the difference between them.
+    longest = max((t["ms"] or 0 for side in sides for t in side["turns"]), default=0)
+    data = {"sides": sides, "longest": longest}
     # UTF-8 rather than \u escapes: the page declares the charset, Danish stays readable in the source,
     # and the file is smaller. `</` is escaped because nothing inside a <script> may close it early.
     blob = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")

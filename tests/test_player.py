@@ -92,3 +92,21 @@ def test_writing_creates_the_directory(tmp_path: Path) -> None:
     dest = write(_call("a"), _call("b"), tmp_path / "nested" / "page.html")
     assert dest.exists()
     assert dest.read_text().startswith("<!doctype html>")
+
+
+def test_both_calls_share_one_timeline_scale() -> None:
+    """Two scales would say nothing about the difference between the calls."""
+    slow = _call("slow")
+    slow.turns[1].audio_ms = 8000
+    page = build(slow, _call("fast"))
+    assert '"longest": 8000' in page or '"longest":8000' in page
+    assert "bars are to scale" in page
+    assert "class='bar'" in page or "className = 'bar'" in page
+
+
+def test_a_call_with_no_timings_draws_no_bars() -> None:
+    quiet = _call("quiet")
+    for turn in quiet.turns:
+        turn.audio_ms = turn.model_ms = None
+    page = build(quiet, quiet)
+    assert '"longest": 0' in page or '"longest":0' in page
