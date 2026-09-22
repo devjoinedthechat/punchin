@@ -624,8 +624,11 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
-    except (ModelDidNotRun, FileNotFoundError) as stopped:
-        # Something the run needed was not there. Exit 2, the way a shell tool says "bad input".
+    except FileNotFoundError as missing:
+        # Exit 2, the way a shell tool says "bad input". Without the errno, which is noise to a reader.
+        print(f"punchin: cannot read {missing.filename}", file=sys.stderr)
+        return 2
+    except ModelDidNotRun as stopped:
         print(f"punchin: {stopped}", file=sys.stderr)
         return 2
     except (ValueError, AgentProtocolError) as wrong:

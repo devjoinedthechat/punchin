@@ -188,8 +188,3 @@ class Checked:
 def check(rows: Sequence[dict[str, Any]], baseline: dict[str, Any]) -> Checked:
     grouped = by_scenario(rows)
     return Checked(compare(rows, baseline), flaky(rows), len(grouped), len(rows))
-
-
-def report(found: Sequence[Regression], total: int) -> str:
-    """Kept for callers that only want the regression lines."""
-    return Checked(list(found), scenarios=total, trials=total).text()

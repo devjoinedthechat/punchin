@@ -15,7 +15,7 @@ The pieces, in the order a call goes through them:
 from punchin.adapter import PROTOCOL, AgentProtocolError, CommandAgent
 from punchin.agent import Agent, AgentTurn, Lead, ModelAgent, ScriptedAgent
 from punchin.call import FORMAT, Call, ToolCall, Turn
-from punchin.check import Regression, Rule, baseline_from, compare
+from punchin.check import Checked, Flaky, Regression, Rule, baseline_from, check, compare, flaky
 from punchin.customer import Customer, CustomerTurn, ScriptedCustomer
 from punchin.dms import Dms, Vehicle, fresh
 from punchin.fidelity import teacher_forced
@@ -38,12 +38,14 @@ __all__ = [
     "AgentTurn",
     "Budget",
     "Call",
+    "Checked",
     "ClaudeCodeModel",
     "CommandAgent",
     "Completion",
     "Customer",
     "CustomerTurn",
     "Dms",
+    "Flaky",
     "ForkReport",
     "GoalState",
     "Lead",
@@ -61,10 +63,12 @@ __all__ = [
     "Vehicle",
     "__version__",
     "baseline_from",
+    "check",
     "compare",
     "converse",
     "extract",
     "feel",
+    "flaky",
     "fork",
     "fork_once",
     "fresh",
