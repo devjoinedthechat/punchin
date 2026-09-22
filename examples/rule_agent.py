@@ -112,7 +112,8 @@ async def reply(request: dict[str, Any]) -> str:
 
     offered = free[0]
     already_offered = any("Skal jeg booke" in line for line in mine)
-    if already_offered and re.search(r"\b(ja|jo|fint|okay|ok)\b", latest, re.I):
+    # The corpus has a customer who switches to English mid-call, so a Danish-only yes is not enough.
+    if already_offered and re.search(r"\b(ja|jo|fint|okay|ok|yes|yeah|sure|book it)\b", latest, re.I):
         note = ", ".join(
             word
             for word, pattern in (("lånebil", r"lånebil"), ("stor service", r"stor(e)? service|big one"))
