@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml"><img src="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
   <img src="https://img.shields.io/badge/tests-193-brightgreen" alt="193 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
@@ -301,22 +302,20 @@ depends on the sampler.
   hurried:     came out right in 1 of 3 runs
 ```
 
-That block is what flakiness looks like, not something this repository's own corpus produces: the two
-agents it ships with are deterministic, so they agree with themselves every time. You will see it the
-moment a model is the agent.
+(The two agents punchin ships are deterministic and never go flaky. A model will.)
 
-Correctness, the day, the plate and the workshop note must not go from true to false. The number of
-times read out in one breath, the agent repeating itself and the customer stalling must not go up.
+What counts as worse:
 
-A word on those last three. They are **hand-written proxies**, not validated measures: nobody has
-checked them against a human rating of the same calls, and this README says elsewhere that
-LLM-as-judge is mostly theatre, so it owes you the same scepticism about its own heuristics. Each one
-names something a person would recognise on a phone call, and each is cheap, deterministic and wrong in
-ways you can read off the source — which a judge is not. Use them for *movement*: the same proxy,
-before and after a change, on the same call. Do not use them as a score.
-Turns and lookups have a little slack, because a call is allowed to wander. A metric missing from
-either side is never a regression, so a text run can be checked against a text baseline without the
-audio columns inventing failures.
+| | rule |
+|---|---|
+| correctness, the day, the plate, the workshop note | must not fall from true to false |
+| times read out in one breath, repeated lines, customer stalls | must not go up |
+| turns, lookups | may wander a little before they count |
+| a metric only one side has | never a regression |
+
+The first row is ground truth: the corpus knows the day she meant. The second row is **hand-written
+proxies** — cheap, deterministic, and wrong in ways you can read off the source. Use them for movement
+on one call across a change, not as a score for an agent.
 
 This repository gates itself on [baseline.json](baseline.json) in CI.
 
@@ -422,31 +421,26 @@ $ punchin fidelity .punchin/calls/*.json --goal truth --summary
 
 ### Is she as difficult as the real one was?
 
-Overlap cannot answer that, and it is the question the whole tool rests on. A simulated customer can
-match every fact the real one gave **and still hand over three more** — and an agent talking to a more
-forthcoming customer has an easier job than the agent on the real call did, which is exactly how a fix
-comes to look better than it is.
+Overlap cannot tell you. A simulated customer can match every fact the real one gave **and hand over
+three more**, and an agent talking to a more forthcoming customer has an easier job than the agent on
+the real call did. That is how a fix comes to look better than it is.
 
-So the *volunteers* figure is separate: per turn, the facts the customer offered that the agent had not
-asked for, measured against what the real customer offered in the same place. Zero means she is as
-forthcoming as the woman on the recording. Above zero means forks are running against someone easier.
+So *volunteers* is measured separately: per turn, the facts the customer offered that the agent had not
+asked for, against what the real customer offered in the same place. Zero is as forthcoming as the woman
+on the recording. Above zero means forks run against someone easier.
 
-Here it is **+0.09** — roughly one extra fact every eleven turns. Small, and in the same direction the
-[soundness check](#does-a-fork-tell-the-truth) found nothing in: a simulator that over-helps a little,
-and forks that agreed with full re-runs anyway. Two measurements that could have disagreed, pointing the
-same way.
+It is **+0.09** — one extra fact every eleven turns. Small, and pointing the same way as the
+[soundness check](#does-a-fork-tell-the-truth), which found no gap at all.
 
-**Read the pooled line.** Averaging the calls' averages gives a two-turn call the same weight as a
-ten-turn one, and a two-turn call's score moves in steps of 0.50 — it is close to a coin flip on whether
-one keyword fired. `already-booked` swinging between 0.00 and 0.50 across runs is that, not a simulator
-that cannot say no: its first turn, the actual refusal, matches well every time.
+**Read the pooled line, not the per-call one.** Averaging call averages weighs a two-turn call like a
+ten-turn one, and a two-turn score moves in steps of 0.50. `already-booked` swinging between 0.00 and
+0.50 is that, not a simulator that cannot refuse: its refusal turn matches every time.
 
-The other thing only the spread shows is that **the simulator is two to four times more verbose than the
-customer it is playing**, on every call. Some of that is this corpus: its customers answer in one or two
-words by construction (*"Ja."*, *"Onsdag."*), and a simulator writing a natural sentence is marked down
-for it. On a recording made by a model, where the agent's own lines are conversational, the same
-measurement gives 0.80. So read 0.69 as a floor, and use the number for what it is actually good at: a
-change to the simulator, measured before and after on the same recordings.
+**The simulator is two to four times more verbose** than the customer it plays, on every call. Some of
+that is this corpus, whose customers answer in one or two words by construction (*"Ja."*, *"Onsdag."*).
+On a recording made by a model, where the agent's lines are conversational, the same measurement gives
+0.80. Read 0.69 as a floor, and use the number for what it is good at: a change to the simulator,
+measured before and after on the same recordings.
 
 ### What each part of the goal state is worth
 
@@ -541,12 +535,13 @@ difference between reading a plate and inventing one. Ten plates, spoken and put
 | call list as hotwords and a short prompt | 8 / 10 | none |
 | that list padded with weekdays and opening hours | 5 / 10 | **12 turns** |
 
-The last row is the one worth keeping. `initial_prompt` conditions the decoder as though it were speech
-that came just before, so a long one is something the decoder can plausibly continue — and it does. A
-customer saying *"Tirsdag."* came back as *"En samtale om en tidligste."*, which is a fragment of the
-prompt itself. The call list alone, around 120 characters, never leaked once across the whole corpus.
-punchin therefore always passes the vocabulary as hotwords and only adds it to the prompt while it stays
-under a length budget, which is a constant in `audio.py` with the measurement in its comment.
+The last row is the one to keep. `initial_prompt` conditions the decoder as if it were speech that came
+just before, so a long one is something the decoder can plausibly continue — and does. A customer saying
+*"Tirsdag."* came back as *"En samtale om en tidligste."*: a fragment of the prompt itself. The call
+list alone, around 120 characters, never leaked once.
+
+So the vocabulary always goes to `hotwords`, and only into the prompt while it stays under a length
+budget — a constant in `audio.py`, with the measurement in its comment.
 
 Two cautions on these figures. They come from **synthesized** Danish, not a human caller, and a TTS
 voice is a different and in places harder distribution for a recogniser. And rewording the prompt by a
@@ -597,33 +592,38 @@ the customer and the agent, both lines are shown: what she said, and under it wh
 
 ## What it does not do
 
-- **No real-time turn-taking.** The loop is turn-driven, and that is the trade that buys forking: you
-  cannot serve a prefix and hand control over mid-utterance at the same time. Barge-in, endpointing and
-  the silence before a reply need a duplex streaming pipeline, and they are measured well elsewhere
-  (EVA-Bench, IHBench, and every commercial voice-testing platform).
-- **No telephony.** There is no phone number and no carrier. The part of a phone call that changes the
-  outcome — the 8 kHz band — is applied directly, which is where the entity loss above comes from.
-- **No model latency claims from audio runs.** Recognition happens between turns, not in a stream, so
-  the timings recorded are the model's and the speech's, never a caller's experience of the gap.
-- **Audio needs a Mac.** The pipeline falls back to espeak-ng elsewhere and runs, but espeak's Danish
-  is not intelligible to the recogniser — *"Det er AB 12 345."* comes back as *"Vi er med til at tjekke
-  på en annen tema før"*, and biasing does not help. That fallback keeps the code exercised off macOS;
-  it does not produce numbers worth reading, and it says so when it starts. Figures in this README come
-  from the macOS `Sara` voice.
-- **One vertical.** The corpus is Danish after-sales booking. The engine takes scenarios as data and is
-  not tied to it, but no second vertical is included and none is claimed to work.
-- **The feel metrics are proxies nobody has calibrated.** They are for movement on one call before and
-  after a change, not for scoring an agent. Said at greater length [above](#as-a-gate).
-- **Soundness is checked, not established.** Three trials on one scenario, with both arms at their
-  ceiling, is a check you can run rather than a guarantee anybody should quote. A case where a fix works
-  only some of the time would test it properly, and engineering one on purpose is an open problem.
-- **The fidelity metric is noisier than the effects anyone wants to measure.** Repeated runs of one call
-  spread 0.13 to 0.23, while the goal-state fields are worth 0.03 to 0.10 each. `--ablate --repeat N`
-  reports this honestly instead of hiding it, but no field can be called worthless on the evidence so
-  far, and separating them would take far more repeats than the ablation runs by default.
-- **A scenario's outcome is somebody's judgement.** An imported call is graded against what a person
-  said should have happened. punchin makes that explicit rather than inferring it, which means a wrong
-  judgement produces a confidently wrong grade.
+**No real-time turn-taking.** The loop is turn-driven, which is the trade that buys forking: you cannot
+serve a prefix and hand over control mid-utterance at once. Barge-in, endpointing and the gap before a
+reply need a duplex pipeline, and are measured well elsewhere — EVA-Bench, IHBench, and every commercial
+voice-testing platform.
+
+**No telephony.** No phone number, no carrier. The part of a call that changes the outcome, the 8 kHz
+band, is applied directly.
+
+**No latency a caller would recognise.** Recognition runs between turns, not in a stream, so a recorded
+timing is the model's and the speech's, never the silence someone waited through.
+
+**Audio wants a Mac.** Off macOS it falls back to espeak-ng and runs, but espeak's Danish is not
+intelligible to the recogniser — *"Det er AB 12 345."* comes back as *"Vi er med til at tjekke på en
+annen tema før"*, biased or not. It keeps the code exercised and says so at startup. Every figure here
+comes from the macOS `Sara` voice.
+
+**One vertical.** Danish after-sales booking. Scenarios are data and the engine is not tied to them, but
+no second vertical ships and none is claimed to work.
+
+**The feel metrics are uncalibrated.** No human has rated the same calls. Good for movement across a
+change, not for scoring an agent.
+
+**Soundness is checked, not established.** Three trials, one scenario, every arm at its ceiling. A fix
+that works only some of the time would test it properly, and engineering one deliberately is unsolved.
+
+**Fidelity is noisier than what it measures.** Repeated runs of one call spread 0.13 to 0.23; the
+goal-state fields are worth 0.03 to 0.10 each. Pairing and `--repeat` make the gap visible rather than
+closing it, so no field can be called worthless yet.
+
+**A scenario's outcome is somebody's judgement.** An imported call is graded against what a person said
+should have happened — explicit rather than inferred, which also means a wrong judgement grades
+confidently wrong.
 
 ## Development
 
