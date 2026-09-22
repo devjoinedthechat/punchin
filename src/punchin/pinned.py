@@ -74,7 +74,10 @@ class PinnedCustomer:
             prefers_time=goal.prefers_time or "lige meget",
             manner=", ".join(goal.manner) or "helt almindeligt",
             reveals=", ".join(goal.reveals) or "som det falder naturligt",
-            transcript=call.transcript() or "(agenten har ikke sagt noget endnu)",
+            # What was said, not what was heard. The recogniser sits between her mouth and the
+            # agent's ears — not between her and herself. Showing her a mangled version of her own
+            # previous line would have her react to words she never spoke.
+            transcript=call.transcript(heard=False) or "(agenten har ikke sagt noget endnu)",
         )
         system = SYSTEM.format(formality_da=FORMALITY_DA[goal.formality], mood=goal.mood, hangup=HANGUP)
         done = self.model.complete(system, prompt)

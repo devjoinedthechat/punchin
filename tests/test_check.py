@@ -196,3 +196,34 @@ def test_an_outcome_that_used_to_be_certain_and_is_now_usual_has_regressed() -> 
     assert [r.detail for r in compare(sometimes, was)] == ["correct: 100% -> 67% of runs"]
     # and the other way round is an improvement, not a regression
     assert compare([{"scenario": "a", "correct": True}], baseline_from(sometimes)) == []
+
+
+def test_the_tolerance_comes_from_the_baseline_not_from_a_guess() -> None:
+    """A scenario that naturally wanders by four turns should not fail for wandering by two."""
+    wanders = baseline_from([{"scenario": "a", "turns": n} for n in (10, 12, 14)])
+    assert wanders["scenarios"]["a"]["spread"]["turns"] == 4.0
+
+    assert compare([{"scenario": "a", "turns": 14}], wanders) == []
+    broke = compare([{"scenario": "a", "turns": 20}], wanders)
+    assert "varies by 4 on its own" in broke[0].detail
+
+
+def test_a_scenario_that_never_wanders_is_held_to_that() -> None:
+    steady = baseline_from([{"scenario": "b", "turns": 10} for _ in range(3)])
+    assert steady["scenarios"]["b"]["spread"]["turns"] == 0.0
+    broke = compare([{"scenario": "b", "turns": 13}], steady)
+    assert broke and "10 -> 13" in broke[0].detail
+
+
+def test_a_single_run_baseline_has_no_spread_and_falls_back_to_the_slack() -> None:
+    """One run cannot know how much a number moves, so the hand-set slack is all there is."""
+    once = baseline_from([{"scenario": "c", "turns": 10}])
+    assert once["scenarios"]["c"]["spread"] == {}
+    assert compare([{"scenario": "c", "turns": 12}], once) == []  # inside the slack of 2
+    assert compare([{"scenario": "c", "turns": 13}], once)  # outside it
+
+
+def test_an_outcome_rate_has_no_spread_because_it_is_already_one() -> None:
+    mixed = baseline_from([{"scenario": "d", "correct": True}, {"scenario": "d", "correct": False}])
+    assert "correct" not in mixed["scenarios"]["d"]["spread"]
+    assert mixed["scenarios"]["d"]["correct"] == 0.5

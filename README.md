@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml"><img src="https://github.com/devjoinedthechat/punchin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-214-brightgreen" alt="214 tests">
+  <img src="https://img.shields.io/badge/tests-238-brightgreen" alt="238 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
 </p>
 

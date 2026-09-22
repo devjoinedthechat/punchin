@@ -243,3 +243,72 @@ def test_one_call_still_gets_the_single_call_report(
     printed = capsys.readouterr().out
     assert "fork of" in printed
     assert "across" not in printed
+
+
+def test_a_change_splits_where_a_person_would_split_it() -> None:
+    from punchin.fork import sentences
+
+    assert sentences("Læs dagen tilbage. Gæt aldrig. Book efter et ja.") == [
+        "Læs dagen tilbage.",
+        "Gæt aldrig.",
+        "Book efter et ja.",
+    ]
+    assert sentences("Tilbyd én tid ad gangen.") == []  # nothing to take out of one sentence
+    assert sentences("  ") == []
+
+
+def test_a_sentence_whose_removal_costs_nothing_was_not_carrying_the_fix() -> None:
+    from punchin.fork import Ingredient, Recipe
+
+    class R:
+        def __init__(self, passed: int) -> None:
+            self.fixed, self.live_cost_usd = passed, 0.0
+
+        @property
+        def attempts(self) -> list[None]:
+            return [None] * 3
+
+    whole = R(3)
+    found = Recipe("A. B.", whole)  # type: ignore[arg-type]
+    found.without = [
+        Ingredient("A.", R(0)),  # type: ignore[arg-type]
+        Ingredient("B.", R(3)),  # type: ignore[arg-type]
+    ]
+    printed = found.text()
+    assert "without A." in printed and "carries it" in printed
+    assert "without B." in printed and "does nothing here" in printed
+    assert "1 sentence(s) could come out" in printed
+
+
+def test_a_change_where_every_sentence_matters_says_so() -> None:
+    from punchin.fork import Ingredient, Recipe
+
+    class R:
+        def __init__(self, passed: int) -> None:
+            self.fixed, self.live_cost_usd = passed, 0.0
+
+        @property
+        def attempts(self) -> list[None]:
+            return [None] * 3
+
+    found = Recipe("A. B.", R(3))  # type: ignore[arg-type]
+    found.without = [Ingredient("A.", R(1)), Ingredient("B.", R(0))]  # type: ignore[arg-type]
+    assert "every sentence is doing something" in found.text()
+
+
+def test_ablating_a_single_sentence_change_is_refused(corpus: list[Call], tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="more than one sentence"):
+        main(
+            [
+                "fork",
+                str(tmp_path / f"{corpus[0].id}.json"),
+                "--at",
+                "last",
+                "--ablate-change",
+                "--system-suffix",
+                "Tilbyd én tid ad gangen.",
+                "--out",
+                str(tmp_path / "ab"),
+                "-q",
+            ]
+        )

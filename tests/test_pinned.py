@@ -54,15 +54,6 @@ def test_the_goal_state_is_what_the_customer_is_told_and_nothing_else() -> None:
     assert "Hvilken dag?" in spy.prompt  # plus the conversation so far
 
 
-def test_the_customer_is_given_what_the_agent_heard_not_what_was_said() -> None:
-    """A pinned customer replaying a spoken call must see the same mangled line the agent saw."""
-    spy = Spy()
-    call = _call(("agent", "Nummerpladen?", None), ("customer", "AB 12 345.", "AB-12300-354."))
-    PinnedCustomer(spy, SCENARIO.goal).respond(call)
-    assert "AB-12300-354." in spy.prompt
-    assert "Kunde: AB 12 345." not in spy.prompt
-
-
 def test_the_hangup_marker_ends_the_call_and_never_reaches_the_transcript() -> None:
     customer = PinnedCustomer(Spy(f"Tak, hej. {HANGUP}"), SCENARIO.goal)
     said = customer.respond(_call(("agent", "Hej hej.", None)))
@@ -108,3 +99,16 @@ def test_the_whole_thing_runs_against_the_stand_in_binary() -> None:
     said = PinnedCustomer(model, SCENARIO.goal).respond(_call(("agent", "Må jeg få nummerpladen?", None)))
     assert said is not None
     assert "AB 12 345" in said.text
+
+
+def test_she_is_shown_what_she_said_not_what_the_recogniser_made_of_it() -> None:
+    """The recogniser sits between her mouth and the agent's ears, not between her and herself."""
+    spy = Spy()
+    call = _call(
+        ("agent", "Nummerpladen?", None),
+        ("customer", "Det er AB 12 345.", "Det er AB-12300-354."),
+        ("agent", "Hvilken dag?", None),
+    )
+    PinnedCustomer(spy, SCENARIO.goal).respond(call)
+    assert "Det er AB 12 345." in spy.prompt
+    assert "AB-12300-354" not in spy.prompt  # she never said that, so she must not react to it

@@ -17,11 +17,23 @@ from punchin.adapter import CommandAgent
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
 from punchin.check import baseline_from, by_scenario, check, load_baseline
+from punchin.curve import measure as curve_of
 from punchin.customer import Customer, ScriptedCustomer
+from punchin.discriminate import discriminate
 from punchin.dms import TODAY, normalize_reg, serve
 from punchin.doctor import examine, report
 from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
-from punchin.fork import Budget, Sweep, agent_turns, fork, fork_point
+from punchin.fork import (
+    Budget,
+    ForkReport,
+    Ingredient,
+    Recipe,
+    Sweep,
+    agent_turns,
+    fork,
+    fork_point,
+    sentences,
+)
 from punchin.goal import extract, score
 from punchin.importer import read_call, scenario_for
 from punchin.metrics import summarize
@@ -197,6 +209,17 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         else:
             goal, _ = extract(call, model, TODAY)
 
+        if args.discriminate:
+            others = [
+                turn.spoken
+                for other in args.call
+                if other != path
+                for turn in Call.load(Path(other)).turns
+                if turn.speaker == "customer"
+            ]
+            print(discriminate(call, goal, model, elsewhere=others, workers=args.workers).text())
+            continue
+
         if args.ablate:
             print(ablation(call, goal, model, FIELDS, times=args.repeat, workers=args.workers).text())
             continue
@@ -248,11 +271,30 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 
 
 def cmd_fork(args: argparse.Namespace) -> int:
-    agent = agent_for(args)  # before any file is read, so a bad flag fails in a millisecond
+    # Every usage check comes first. Building the agent constructs a model, and a model that cannot
+    # be found reports itself instead of the flag that was actually wrong.
+    if args.ablate_change and not sentences(args.system_suffix):
+        raise SystemExit(
+            "--ablate-change needs a --system-suffix of more than one sentence; there is nothing "
+            "to take out of a single one"
+        )
+    if args.ablate_change and args.models:
+        raise SystemExit("--ablate-change and --models each vary one thing; run them separately")
+    agent = agent_for(args)
     if len(args.call) > 1:
         return _sweep(args, agent)
     call = Call.load(Path(args.call[0]))
     scenario = truth_for(known_scenarios(args), call, args)
+    if args.ablate_change or args.models:
+        at = fork_point(call, args.at)
+        Path(args.out).mkdir(parents=True, exist_ok=True)
+        code = (
+            _ablate_change(args, call, scenario, at)
+            if args.ablate_change
+            else _across_models(args, call, scenario, at)
+        )
+        (Path(args.out) / ".dms-state.json").unlink(missing_ok=True)
+        return code
     model = model_for(args)
     goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
     changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"agent {agent.name}"
@@ -278,6 +320,86 @@ def cmd_fork(args: argparse.Namespace) -> int:
     else:
         print(report.text())
     return 0 if report.fixed == len(report.attempts) and report.attempts else 1
+
+
+def _forked(args: argparse.Namespace, call: Call, scenario: Scenario, at: int, **over: Any) -> ForkReport:
+    """One fork of one call, with the flags this invocation carries."""
+    model = over.pop("model", None) or model_for(args)
+    agent = over.pop("agent", None) or agent_for(args)
+    out = Path(args.out)
+    goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
+    return fork(
+        call,
+        scenario,
+        at,
+        agent=agent,
+        goal=goal,
+        model=model,
+        state_path=out / ".dms-state.json",
+        repeat=args.repeat,
+        changed=over.pop("changed", ""),
+        budget=over.pop("budget", None),
+        out=out,
+        wrap=lambda inner: voice(args, inner, out),
+    )
+
+
+def _ablate_change(args: argparse.Namespace, call: Call, scenario: Scenario, at: int) -> int:
+    """Which sentence of the change is doing the work."""
+    parts = sentences(args.system_suffix)
+    budget = Budget(args.max_usd)
+    found = Recipe(
+        args.system_suffix, _forked(args, call, scenario, at, budget=budget, changed="the whole change")
+    )
+    for part in parts:
+        if budget.exhausted:
+            found.stopped = f"budget of ${budget.limit_usd:.2f} spent"
+            break
+        rest = " ".join(other for other in parts if other != part)
+        agent = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=rest)
+        found.without.append(
+            Ingredient(
+                part,
+                _forked(args, call, scenario, at, agent=agent, budget=budget, changed=f"without {part!r}"),
+            )
+        )
+    print(json.dumps(found.as_dict(), ensure_ascii=False, sort_keys=True) if args.json else found.text())
+    return 0
+
+
+def _across_models(args: argparse.Namespace, call: Call, scenario: Scenario, at: int) -> int:
+    """Does the fix hold on another model? A change that only works on one is not a fix."""
+    budget = Budget(args.max_usd)
+    lines, broke = [f"{args.system_suffix or 'the agent'} across models", ""], False
+    for name in [part.strip() for part in args.models.split(",") if part.strip()]:
+        if budget.exhausted:
+            lines.append(f"  stopped: budget of ${budget.limit_usd:.2f} spent")
+            break
+        agent = ModelAgent(ClaudeCodeModel(model=name), TODAY, system_suffix=args.system_suffix)
+        report = _forked(
+            args,
+            call,
+            scenario,
+            at,
+            agent=agent,
+            model=ClaudeCodeModel(model=name),
+            budget=budget,
+            changed=name,
+        )
+        held = report.fixed == len(report.attempts) and report.attempts
+        broke = broke or not held
+        lines.append(
+            f"  {name:22} correct {report.fixed}/{len(report.attempts)}"
+            f"   ${report.live_cost_usd:.3f}   {'holds' if held else 'does not hold'}"
+        )
+    lines.append("")
+    lines.append(
+        "  the change does not carry across every model listed"
+        if broke
+        else "  the change holds on every model listed"
+    )
+    print("\n".join(lines))
+    return 1 if broke else 0
 
 
 def _sweep(args: argparse.Namespace, agent: Agent) -> int:
@@ -316,6 +438,35 @@ def _sweep(args: argparse.Namespace, agent: Agent) -> int:
     (out / ".dms-state.json").unlink(missing_ok=True)
     print(json.dumps(swept.as_dict(), ensure_ascii=False, sort_keys=True) if args.json else swept.text())
     return 1 if swept.verdicts["broke"] else 0
+
+
+def cmd_curve(args: argparse.Namespace) -> int:
+    agent = agent_for(args)
+    call = Call.load(Path(args.call))
+    known = known_scenarios(args)
+    scenario = truth_for(known, call, args)
+    model = model_for(args)
+    goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    change = f"system suffix {args.system_suffix!r}" if args.system_suffix else "the agent unchanged"
+
+    found = curve_of(
+        call,
+        scenario,
+        agent=agent,
+        goal=goal,
+        model=model,
+        state_path=out / ".dms-state.json",
+        repeat=args.repeat,
+        change=change,
+        budget=Budget(args.max_usd),
+        wrap=lambda inner: voice(args, inner, out),
+        out=out if args.keep else None,
+    )
+    (out / ".dms-state.json").unlink(missing_ok=True)
+    print(json.dumps(found.as_dict(), ensure_ascii=False, sort_keys=True) if args.json else found.text())
+    return 0
 
 
 def cmd_check(args: argparse.Namespace) -> int:

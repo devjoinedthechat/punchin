@@ -7,6 +7,7 @@ call, which is what makes the continuation that customer's and not a generic cal
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -330,6 +331,79 @@ class Sweep:
         else:
             lines.append("  Changes nothing that was measured.")
         lines.append(f"  live cost ${self.live_cost_usd:.3f}; every prefix was free")
+        if self.stopped:
+            lines.append(f"  stopped early: {self.stopped}")
+        return "\n".join(lines)
+
+
+def sentences(change: str) -> list[str]:
+    """A prompt change, split where a person would split it. Blank if there is nothing to split."""
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+", change.strip()) if part.strip()]
+    return parts if len(parts) > 1 else []
+
+
+@dataclass
+class Ingredient:
+    """One sentence of a change, and what the change does without it."""
+
+    dropped: str
+    report: ForkReport
+
+    @property
+    def still_fixes(self) -> int:
+        return self.report.fixed
+
+    @property
+    def trials(self) -> int:
+        return len(self.report.attempts)
+
+
+@dataclass
+class Recipe:
+    """Which part of a prompt change did the work.
+
+    A fix that works tells you nothing about which of its three sentences mattered. Dropping one at a
+    time and re-forking does: a sentence whose removal costs nothing was not carrying the fix, and it
+    should come out before it calcifies into folklore.
+    """
+
+    change: str
+    whole: ForkReport
+    without: list[Ingredient] = field(default_factory=list)
+    stopped: str | None = None
+
+    @property
+    def live_cost_usd(self) -> float:
+        return self.whole.live_cost_usd + sum(one.report.live_cost_usd for one in self.without)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "change": self.change,
+            "whole": {"fixed": self.whole.fixed, "of": len(self.whole.attempts)},
+            "without": [
+                {"sentence": one.dropped, "fixed": one.still_fixes, "of": one.trials} for one in self.without
+            ],
+            "live_cost_usd": round(self.live_cost_usd, 4),
+            "stopped": self.stopped,
+        }
+
+    def text(self) -> str:
+        lines = [
+            f"what carries {self.change[:60]!r}",
+            f"  the whole change    fixes {self.whole.fixed}/{len(self.whole.attempts)}",
+            "",
+        ]
+        for one in sorted(self.without, key=lambda i: i.still_fixes):
+            cost = self.whole.fixed - one.still_fixes
+            verdict = "carries it" if cost > 0 else "does nothing here"
+            lines.append(f"  without {one.dropped[:44]:44} {one.still_fixes}/{one.trials}  {verdict}")
+        idle = [one.dropped for one in self.without if one.still_fixes >= self.whole.fixed]
+        lines.append("")
+        if idle:
+            lines.append(f"  {len(idle)} sentence(s) could come out without changing the outcome.")
+        else:
+            lines.append("  every sentence is doing something.")
+        lines.append(f"  live cost ${self.live_cost_usd:.3f}")
         if self.stopped:
             lines.append(f"  stopped early: {self.stopped}")
         return "\n".join(lines)

@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "scenarios": {
     "already-booked": {
       "agent_repeats": 1.0,
@@ -8,6 +8,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 0.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 4.0
     },
@@ -18,6 +24,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -28,6 +40,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -38,6 +56,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 8.0
     },
@@ -48,6 +72,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 12.0
     },
@@ -58,6 +88,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -68,6 +104,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -78,6 +120,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -88,6 +136,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     },
@@ -98,6 +152,12 @@
       "day_ok": 1.0,
       "note_ok": 1.0,
       "options_max": 1.0,
+      "spread": {
+        "agent_repeats": 0.0,
+        "customer_stalls": 0.0,
+        "options_max": 0.0,
+        "turns": 0.0
+      },
       "trials": 3,
       "turns": 10.0
     }

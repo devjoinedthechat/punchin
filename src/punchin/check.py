@@ -23,7 +23,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Literal
 
-FORMAT = 2
+FORMAT = 3
 Direction = Literal["higher_is_worse", "lower_is_worse", "must_stay_true"]
 
 
@@ -34,17 +34,25 @@ class Rule:
     slack: float = 0.0
     why: str = ""
 
-    def broken(self, was: float | None, now: float | None) -> str | None:
-        """What went wrong, or None. A metric absent from either side is not a regression."""
+    def broken(self, was: float | None, now: float | None, spread: float | None = None) -> str | None:
+        """What went wrong, or None. A metric absent from either side is not a regression.
+
+        `spread` is how much this metric moved across the baseline's own repeated runs. When it is
+        known it replaces the hand-set slack, because a scenario that naturally wanders by three turns
+        should not be failed for wandering by three turns. A hand-set number cannot know that and this
+        can, since the baseline already recorded it.
+        """
         if was is None or now is None:
             return None
         if self.direction == "must_stay_true":
             # Both are rates now. Falling from "always" to "usually" is a regression too.
             return f"{self.key}: {was:.0%} -> {now:.0%} of runs" if now < was - 1e-9 else None
-        if self.direction == "higher_is_worse" and now > was + self.slack:
-            return f"{self.key}: {_n(was)} -> {_n(now)}"
-        if self.direction == "lower_is_worse" and now < was - self.slack:
-            return f"{self.key}: {_n(was)} -> {_n(now)}"
+        allowed = self.slack if spread is None else max(spread, self.slack)
+        note = "" if spread is None else f" (it varies by {_n(spread)} on its own)"
+        if self.direction == "higher_is_worse" and now > was + allowed:
+            return f"{self.key}: {_n(was)} -> {_n(now)}{note}"
+        if self.direction == "lower_is_worse" and now < was - allowed:
+            return f"{self.key}: {_n(was)} -> {_n(now)}{note}"
         return None
 
 
@@ -93,6 +101,14 @@ def _aggregate(rows: Sequence[dict[str, Any]], key: str) -> float | None:
     return median(numbers) if numbers else None
 
 
+def _spread(rows: Sequence[dict[str, Any]], key: str) -> float | None:
+    """How far this metric moved across these runs. None for a rate, or for a single run."""
+    if key in BOOLEAN:
+        return None
+    numbers = [float(row[key]) for row in rows if isinstance(row.get(key), int | float)]
+    return max(numbers) - min(numbers) if len(numbers) > 1 else None
+
+
 def by_scenario(rows: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -108,6 +124,11 @@ def baseline_from(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
             scenario: {
                 "trials": len(group),
                 **{rule.key: value for rule in RULES if (value := _aggregate(group, rule.key)) is not None},
+                # What each number did across these runs, so a later check can tell wandering from
+                # regression without anybody having to guess a tolerance.
+                "spread": {
+                    rule.key: moved for rule in RULES if (moved := _spread(group, rule.key)) is not None
+                },
             }
             for scenario, group in sorted(by_scenario(rows).items())
         },
@@ -146,7 +167,14 @@ def compare(
         for scenario, group in sorted(grouped.items())
         if (was := known.get(scenario)) is not None
         for rule in rules
-        if (broke := rule.broken(was.get(rule.key), _aggregate(group, rule.key))) is not None
+        if (
+            broke := rule.broken(
+                was.get(rule.key),
+                _aggregate(group, rule.key),
+                (was.get("spread") or {}).get(rule.key),
+            )
+        )
+        is not None
     ]
     found.extend(
         Regression(missing, "in the baseline, not in this run")

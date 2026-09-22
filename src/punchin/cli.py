@@ -16,6 +16,7 @@ from punchin import __version__
 from punchin.adapter import AgentProtocolError
 from punchin.commands import (
     cmd_check,
+    cmd_curve,
     cmd_dms,
     cmd_doctor,
     cmd_extract,
@@ -104,6 +105,16 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
     fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
     fk.add_argument("--json", action="store_true", help="the report as one JSON object")
+    fk.add_argument(
+        "--ablate-change",
+        action="store_true",
+        help="drop one sentence of --system-suffix at a time: which part carries the fix",
+    )
+    fk.add_argument(
+        "--models",
+        default="",
+        help="comma-separated models to try the same change on; a fix that holds on one is not a fix",
+    )
     add_audio_flags(fk)
     add_scenario_flag(fk)
     fk.set_defaults(run=cmd_fork)
@@ -158,6 +169,30 @@ def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
 
 def _add_judging(commands: Commands, common: argparse.ArgumentParser) -> None:
     """The commands that pass judgement on a run: what went wrong, and whether to believe a fork."""
+    crv = commands.add_parser(
+        "curve", parents=[common], help="fork at every turn: where the call was lost, and where it was not"
+    )
+    crv.add_argument("call")
+    crv.add_argument("--repeat", type=int, default=3, help="attempts at each fork point")
+    crv.add_argument(
+        "--system-suffix",
+        default="",
+        help="with a change: how late it still rescues. Without one: which turn decides the outcome.",
+    )
+    crv.add_argument("--model", default="claude-sonnet-5")
+    crv.add_argument(
+        "--agent", default="claude-code", choices=["careful", "careless", "claude-code", "command"]
+    )
+    crv.add_argument("--agent-command", default="")
+    crv.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+    crv.add_argument("--max-usd", type=float, default=5.0)
+    crv.add_argument("--keep", action="store_true", help="save every forked call, not just the numbers")
+    crv.add_argument("--json", action="store_true")
+    crv.add_argument("--out", default=str(DEFAULT_OUT.parent / "curve"))
+    add_audio_flags(crv)
+    add_scenario_flag(crv)
+    crv.set_defaults(run=cmd_curve)
+
     tri = commands.add_parser(
         "triage", parents=[common], help="group the calls that went wrong, biggest group first"
     )
@@ -213,6 +248,11 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
                 type=int,
                 default=1,
                 help="measure this many times; the simulator is sampled, so one run is not a number",
+            )
+            sub.add_argument(
+                "--discriminate",
+                action="store_true",
+                help="can anything tell her turns from the simulator's? 50%% means no",
             )
             sub.add_argument(
                 "--workers",
