@@ -22,7 +22,7 @@ from punchin.call import Call
 from punchin.check import baseline_from, compare, load_baseline, report
 from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, normalize_reg, serve
-from punchin.fidelity import teacher_forced
+from punchin.fidelity import FIELDS, ablation, across, teacher_forced
 from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
 from punchin.importer import read_call, scenario_for
@@ -40,6 +40,8 @@ from punchin.scenarios import (
     ungraded,
     vocabulary,
 )
+from punchin.soundness import measure
+from punchin.triage import triage
 
 DEFAULT_OUT = Path(".punchin/calls")
 
@@ -179,6 +181,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
 def cmd_fidelity(args: argparse.Namespace) -> int:
     model = model_for(args)
+    reports = []
     for path in args.call:
         call = Call.load(Path(path))
         goal: GoalState
@@ -186,8 +189,19 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
             goal = truth_for(known_scenarios(args), call, args).goal
         else:
             goal, _ = extract(call, model, TODAY)
-        print(teacher_forced(call, goal, model).text())
-        print()
+
+        if args.ablate:
+            print(ablation(call, goal, model, FIELDS).text())
+            continue
+
+        report = teacher_forced(call, goal, model)
+        reports.append(report)
+        print(report.text() if not args.summary else report.one_line())
+        if not args.summary:
+            print()
+
+    if len(reports) > 1:
+        print(across(reports))
     return 0
 
 
@@ -246,7 +260,10 @@ def cmd_fork(args: argparse.Namespace) -> int:
         wrap=lambda inner: voice(args, inner, out),
     )
     (out / ".dms-state.json").unlink(missing_ok=True)
-    print(report.text())
+    if args.json:
+        print(json.dumps(report.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(report.text())
     return 0 if report.fixed == len(report.attempts) and report.attempts else 1
 
 
@@ -265,6 +282,54 @@ def cmd_check(args: argparse.Namespace) -> int:
     found = compare(rows, load_baseline(baseline_path))
     print(report(found, len(rows)))
     return 1 if found else 0
+
+
+def cmd_triage(args: argparse.Namespace) -> int:
+    known = known_scenarios(args)
+    calls = [Call.load(Path(path)) for path in args.call]
+    ungradeable = [call.id for call in calls if call.scenario not in known]
+    found = triage(calls, known)
+    if args.json:
+        print(json.dumps(found.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(found.text(limit=args.top))
+        if ungradeable:
+            print(f"\n  {len(ungradeable)} calls had no stated outcome and were left out")
+    return 1 if found.clusters else 0
+
+
+def cmd_soundness(args: argparse.Namespace) -> int:
+    known = known_scenarios(args)
+    scenario = known.get(args.scenario)
+    if scenario is None:
+        raise SystemExit(ungraded(args.scenario, Path(args.scenarios)))
+    if not args.system_suffix:
+        raise SystemExit("--system-suffix is the change whose fork is being checked; it is required")
+
+    model = model_for(args)
+    changed = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
+    plain = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.baseline_suffix)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    found = measure(
+        scenario,
+        agent_with_change=changed,
+        agent_without=plain,
+        goal=scenario.goal,
+        model=model,
+        state_path=out / ".dms-state.json",
+        at=args.at,
+        trials=args.trials,
+        change=args.system_suffix,
+        budget=Budget(args.max_usd),
+        out=out,
+    )
+    (out / ".dms-state.json").unlink(missing_ok=True)
+    if args.json:
+        print(json.dumps(found.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(found.text())
+    return 0
 
 
 def cmd_import(args: argparse.Namespace) -> int:
@@ -350,6 +415,7 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
     fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
     fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
+    fk.add_argument("--json", action="store_true", help="the report as one JSON object")
     add_audio_flags(fk)
     add_scenario_flag(fk)
     fk.set_defaults(run=cmd_fork)
@@ -409,6 +475,33 @@ def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
     chk.set_defaults(run=cmd_check)
 
 
+def _add_judging(commands: Commands, common: argparse.ArgumentParser) -> None:
+    """The commands that pass judgement on a run: what went wrong, and whether to believe a fork."""
+    tri = commands.add_parser(
+        "triage", parents=[common], help="group the calls that went wrong, biggest group first"
+    )
+    tri.add_argument("call", nargs="+")
+    tri.add_argument("--top", type=int, default=10, help="how many groups to print")
+    tri.add_argument("--json", action="store_true")
+    add_scenario_flag(tri)
+    tri.set_defaults(run=cmd_triage)
+
+    snd = commands.add_parser(
+        "soundness", parents=[common], help="check that forking says what a full re-run says"
+    )
+    snd.add_argument("--scenario", required=True)
+    snd.add_argument("--system-suffix", required=True, help="the change whose fork is being checked")
+    snd.add_argument("--baseline-suffix", default="", help="the prompt the recording was made with")
+    snd.add_argument("--at", type=int, default=None, help="fork point; the middle of the call by default")
+    snd.add_argument("--trials", type=int, default=3)
+    snd.add_argument("--model", default="claude-sonnet-5")
+    snd.add_argument("--max-usd", type=float, default=5.0)
+    snd.add_argument("--json", action="store_true")
+    snd.add_argument("--out", default=str(DEFAULT_OUT.parent / "soundness"))
+    add_scenario_flag(snd)
+    snd.set_defaults(run=cmd_soundness)
+
+
 def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
     for name, run, help_text in (
         ("extract", cmd_extract, "read the customer's goal state out of recorded calls"),
@@ -419,6 +512,12 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
         sub.add_argument("--model", default="claude-sonnet-5")
         if name == "fidelity":
             sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+            sub.add_argument("--summary", action="store_true", help="one line per call, then the spread")
+            sub.add_argument(
+                "--ablate",
+                action="store_true",
+                help="drop one goal-state field at a time and report what each is worth",
+            )
         add_scenario_flag(sub)
         sub.set_defaults(run=run)
 
@@ -448,6 +547,7 @@ def parser() -> argparse.ArgumentParser:
 
     _add_recording(commands, common)
     _add_reading(commands, common)
+    _add_judging(commands, common)
     _add_customer(commands, common)
     return root
 

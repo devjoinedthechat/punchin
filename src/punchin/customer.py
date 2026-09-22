@@ -42,6 +42,16 @@ class ScriptedCustomer:
         self.queue: list[Line] = list(scenario.script)
         self.stalled = 0
 
+    def fast_forward(self, call: Call) -> ScriptedCustomer:
+        """Drop the lines this customer has already said in `call`, so a fork resumes mid-script.
+
+        A fork hands the customer a conversation it did not have. Without this it would start again
+        at the top of its script and say the opening line into the middle of a call.
+        """
+        already = {" ".join(turn.spoken.split()) for turn in call.turns if turn.speaker == "customer"}
+        self.queue = [line for line in self.queue if " ".join(line.text.split()) not in already]
+        return self
+
     def respond(self, call: Call) -> CustomerTurn | None:
         last = call.last("agent")
         heard = last.spoken if last else ""

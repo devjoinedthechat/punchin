@@ -28,8 +28,17 @@ from punchin.scenarios import GoalState, Scenario
 MOVED = ("options_max", "turns", "agent_words_max", "customer_stalls")
 
 
+class BudgetSpent(RuntimeError):
+    """The run spent what it was allowed, in the middle of an attempt."""
+
+
 class Budget:
-    """Stops the run starting another attempt once it has spent what it was allowed."""
+    """What a run may spend. Checked between attempts, and inside one through `charge`.
+
+    Checking only between attempts is not enough: one attempt that loops can spend the whole limit
+    several times over before anybody looks. `charge` is called per turn, so the run stops within one
+    turn of the limit rather than one attempt.
+    """
 
     def __init__(self, limit_usd: float) -> None:
         self.limit_usd = limit_usd
@@ -37,6 +46,11 @@ class Budget:
 
     def spend(self, amount: float) -> None:
         self.spent_usd += amount
+
+    def charge(self, amount: float) -> None:
+        self.spend(amount)
+        if self.exhausted:
+            raise BudgetSpent(f"spent ${self.spent_usd:.2f} of the ${self.limit_usd:.2f} allowed")
 
     @property
     def exhausted(self) -> bool:
@@ -68,6 +82,7 @@ def fork_once(
     model: Model,
     state_path: Path,
     wrap: Callable[[Customer], Customer] | None = None,
+    make_customer: Callable[[Call], Customer] | None = None,
 ) -> Call:
     """One attempt: the turns before `at` from the recording, then the agent and the pinned customer live.
 
@@ -78,8 +93,10 @@ def fork_once(
     dms.save(fresh([scenario.vehicle]))
     replay_prefix(call, at, dms)
     lead = Lead(owner=scenario.vehicle.owner, syn_due=scenario.vehicle.syn_due)
-    pinned = PinnedCustomer(model, goal)
-    customer: Customer = wrap(pinned) if wrap else pinned
+    prefix_turns = [turn.model_copy(deep=True) for turn in call.turns[:at]]
+    prefix = call.model_copy(update={"turns": prefix_turns})
+    inner: Customer = make_customer(prefix) if make_customer else PinnedCustomer(model, goal)
+    customer: Customer = wrap(inner) if wrap else inner
     started = now()
     forked = Call(
         id=call_id(f"{scenario.id}-at{at}", agent.name, started),
@@ -89,14 +106,15 @@ def fork_once(
         started_at=started,
         notes={"forked_from": call.id, "forked_at": at},
     )
-    forked.turns = [turn.model_copy(deep=True) for turn in call.turns[:at]]
+    forked.turns = prefix_turns
     try:
         converse(forked, agent, customer, lead, dms)
     finally:
         finish(forked, dms)
         # What the attempt really cost: the prefix was served from the recording and paid for nothing.
         live = sum(turn.cost_usd for turn in forked.turns[at:])
-        forked.notes["live_cost_usd"] = round(live + pinned.cost_usd, 4)
+        spent = float(getattr(inner, "cost_usd", 0.0))
+        forked.notes["live_cost_usd"] = round(live + spent, 4)
     return forked
 
 
@@ -124,6 +142,22 @@ class ForkReport:
     @property
     def live_cost_usd(self) -> float:
         return sum(float(a.notes.get("live_cost_usd", 0.0)) for a in self.attempts)
+
+    def as_dict(self) -> dict[str, Any]:
+        before, after = self.before, self.after
+        return {
+            "original": self.original.id,
+            "scenario": self.scenario.id,
+            "at": self.at,
+            "changed": self.changed,
+            "was_correct": bool(before["correct"]),
+            "fixed": self.fixed,
+            "attempts": len(after),
+            "live_cost_usd": round(self.live_cost_usd, 4),
+            "before": {key: before[key] for key in MOVED},
+            "after": [{key: row[key] for key in MOVED} for row in after],
+            "stopped": self.stopped,
+        }
 
     def text(self) -> str:
         before, after = self.before, self.after
@@ -170,6 +204,7 @@ def fork(
     budget: Budget | None = None,
     out: Path | None = None,
     wrap: Callable[[Customer], Customer] | None = None,
+    make_customer: Callable[[Call], Customer] | None = None,
 ) -> ForkReport:
     if at not in agent_turns(call):
         allowed = ", ".join(str(i) for i in agent_turns(call))
@@ -180,7 +215,15 @@ def fork(
             report.stopped = f"budget of ${budget.limit_usd:.2f} spent after {len(report.attempts)} attempts"
             break
         attempt = fork_once(
-            call, scenario, at, agent=agent, goal=goal, model=model, state_path=state_path, wrap=wrap
+            call,
+            scenario,
+            at,
+            agent=agent,
+            goal=goal,
+            model=model,
+            state_path=state_path,
+            wrap=wrap,
+            make_customer=make_customer,
         )
         report.attempts.append(attempt)
         if budget is not None:

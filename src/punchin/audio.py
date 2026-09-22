@@ -35,18 +35,28 @@ SAMPLE_RATE = 16000
 PROMPT_BUDGET = 200
 
 
+def speaker() -> str | None:
+    """Whichever text-to-speech this machine has: macOS `say`, or espeak-ng anywhere else."""
+    if shutil.which("say") and DANISH_VOICE in _voices():
+        return "say"
+    if shutil.which("espeak-ng"):
+        return "espeak-ng"
+    return None
+
+
 def available() -> tuple[bool, str]:
     """Whether this machine can speak and listen, and what is missing if it cannot."""
-    if not shutil.which("say"):
-        return False, "no `say` command (macOS only)"
+    if speaker() is None:
+        return False, (
+            f"no Danish voice: install espeak-ng, or on macOS add the {DANISH_VOICE} voice "
+            f"(System Settings, Spoken Content)"
+        )
     if not shutil.which("ffmpeg"):
         return False, "no ffmpeg on PATH"
     try:
         import faster_whisper  # noqa: F401, PLC0415
     except ImportError:
         return False, "faster-whisper is not installed: uv sync --extra audio"
-    if DANISH_VOICE not in _voices():
-        return False, f"no {DANISH_VOICE} voice installed (System Settings, Spoken Content)"
     return True, ""
 
 
@@ -61,12 +71,28 @@ def _ffmpeg(*arguments: str) -> None:
 
 
 def speak(text: str, dest: Path, *, voice: str = DANISH_VOICE, rate: int = WORDS_PER_MINUTE) -> Path:
-    """Render one line as 16 kHz mono, the way a headset would capture it."""
+    """Render one line as 16 kHz mono, the way a headset would capture it.
+
+    The two engines do not sound alike, so a recogniser reads them differently. Which one made a
+    recording is on the call, in the customer's name, and a number from one is not a number from the
+    other.
+    """
+    engine = speaker()
+    if engine is None:
+        raise RuntimeError(available()[1])
     dest.parent.mkdir(parents=True, exist_ok=True)
-    raw = dest.with_suffix(".aiff")
-    subprocess.run(["say", "-v", voice, "-r", str(rate), "-o", str(raw), text], check=True)  # noqa: S603, S607
-    _ffmpeg("-i", str(raw), "-ar", str(SAMPLE_RATE), "-ac", "1", str(dest))
-    raw.unlink(missing_ok=True)
+    if engine == "say":
+        raw = dest.with_suffix(".aiff")
+        said = ["say", "-v", voice, "-r", str(rate), "-o", str(raw), text]
+        subprocess.run(said, check=True)  # noqa: S603
+        _ffmpeg("-i", str(raw), "-ar", str(SAMPLE_RATE), "-ac", "1", str(dest))
+        raw.unlink(missing_ok=True)
+        return dest
+    said = ["espeak-ng", "-v", "da", "-s", str(rate), "-w", str(dest), text]
+    subprocess.run(said, check=True)  # noqa: S603
+    wide = dest.with_suffix(".16k.wav")
+    _ffmpeg("-i", str(dest), "-ar", str(SAMPLE_RATE), "-ac", "1", str(wide))
+    wide.replace(dest)
     return dest
 
 
@@ -182,7 +208,10 @@ class AudioCustomer:
         self.over_the_phone = over_the_phone
         self.snr_db = snr_db
         line = "phone" if over_the_phone else "studio"
-        self.name = f"{inner.name}|{voice}|{line}|{recognizer.name}"
+        engine = speaker() or "none"
+        # The engine is in the name because two engines are two different distributions to a
+        # recogniser, and a number from one must not be read as a number from the other.
+        self.name = f"{inner.name}|{engine}:{voice}|{line}|{recognizer.name}"
 
     def respond(self, call: Call) -> CustomerTurn | None:
         said = self.inner.respond(call)
