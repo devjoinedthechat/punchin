@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-108-brightgreen" alt="108 tests">
+  <img src="https://img.shields.io/badge/tests-135-brightgreen" alt="135 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -24,8 +24,10 @@
   <a href="#why-this-is-hard">Why this is hard</a> ·
   <a href="#your-agent-not-this-one">Your agent</a> ·
   <a href="#a-call-you-did-not-record">Import</a> ·
+  <a href="#which-call-to-fork">Triage</a> ·
   <a href="#as-a-gate">As a gate</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
+  <a href="#does-a-fork-tell-the-truth">Soundness</a> ·
   <a href="#is-the-simulated-customer-the-real-one">Fidelity</a> ·
   <a href="#the-corpus">Corpus</a> ·
   <a href="#down-a-phone-line">Audio</a> ·
@@ -233,6 +235,34 @@ booking note:
   live cost $0.086; the 6 turns before the fork cost nothing
 ```
 
+## Which call to fork
+
+An archive has more failures than anyone has attention, and a fork costs a model run either way.
+`punchin triage` groups the calls that went wrong by what went wrong, so the work is ordered by how
+many customers a fix would reach rather than by which call somebody happened to listen to.
+
+```sh
+punchin triage .punchin/calls/*.json
+```
+
+```
+10 calls: 3 came out right, 7 did not, in 2 groups
+
+    4  (40%)  plate never arrived — the registration the customer said never reached the agent
+       across 4 scenarios: already-booked, courtesy-car, hurried, wrong-reg-first
+       fork this one first: 20260922-015529-hurried-scripted-careful
+
+    3  (30%)  never booked — the customer wanted a booking and did not get one
+       across 3 scenarios: code-switch, plain-booking, proxy-caller
+       fork this one first: 20260922-015403-plain-booking-scripted-careful
+```
+
+The grouping reads the recording's own facts — what the grader said failed, whether the plate survived
+the line, whether the agent repeated itself, who hung up — and deliberately does not ask a model. A
+cluster nobody can explain in a sentence is not a cluster anybody can act on. A call showing several
+faults is filed under the first one worth fixing, so it is counted once, and each group names the
+shortest call in it: the cheapest to fork and the easiest to read.
+
 ## As a gate
 
 `punchin check` is the part you put in front of a deploy. It takes the numbers a run produced, holds
@@ -282,6 +312,45 @@ a fix.
 
 Where you fork decides what you are still testing. Fork *after* the self-correction and the agent has to
 read past it; fork before it and the trap is gone, because the customer has not said it yet.
+
+## Does a fork tell the truth?
+
+Everything above rests on one thing: that forking a recording at turn *k* says what a full live re-run
+would have said. That is a claim about the tool, and there is a specific reason to doubt it — a
+simulated customer can be more helpful than the real one was, which would make every fix look like it
+worked.
+
+A fork differs from a live run in two ways at once, so `punchin soundness` separates them:
+
+```sh
+punchin soundness --scenario self-correction --at 4 --trials 3 \
+  --baseline-suffix "…the prompt the recording was made with…" \
+  --system-suffix   "…the change being tested…"
+```
+
+| arm | what it runs | what it isolates |
+|---|---|---|
+| live, full re-run | the scripted customer, from the first turn | the ground truth |
+| fork, scripted customer | the recorded prefix, then the same script | the fork mechanism alone |
+| fork, pinned customer | the recorded prefix, then the simulator | what punchin actually does |
+
+`fork-scripted` against `live` is whether replaying a prefix changes the answer — a gap there is a bug
+in the tool. `fork-pinned` against `fork-scripted` is whether the simulator changes it — a gap there is
+a limit of simulation. They need different fixes, so they are reported apart.
+
+```
+  live, full re-run          correct 3/3  (44%-100%)   <- ground truth
+  fork, scripted customer    correct 3/3  (44%-100%)
+  fork, pinned customer      correct 3/3  (44%-100%)   <- what punchin does
+
+  the fork mechanism moves the answer by +0%
+  the pinned customer moves it by       +0%
+```
+
+Read the intervals before the point estimates. Three trials cannot distinguish a sound fork from one
+that is ten percent optimistic, and when every arm sits at its ceiling the run shows agreement without
+having had much chance to show anything else. What this buys is a check you can run on **your** agent
+and your scenario, with the arms separated, rather than a number to quote.
 
 ## Is the simulated customer the real one?
 
@@ -439,6 +508,8 @@ faster-whisper are all present, and `-m slow` holds the two that need a recognis
 ```
 punchin scenarios          the corpus, and the outcome each call expects
 punchin import             somebody else's transcript, plus the outcome you say was right
+punchin triage             group the calls that went wrong, biggest group first
+punchin soundness          check that forking says what a full re-run says
 punchin record             run a scenario, optionally spoken and over a phone band
 punchin show               a recording, with its fork points and what was heard
 punchin metrics            outcome and feel numbers, as a table or --json
@@ -446,6 +517,8 @@ punchin check              fail when a run is worse than the baseline
 punchin fork               re-run a recording from one turn with a change applied
 punchin extract            the customer's goal state, read out of a recording
 punchin fidelity           teacher-forced: is the simulated customer the real one?
+                           --summary for a spread over many calls, --ablate for what each
+                           part of the goal state is worth
 punchin player             one page that plays two calls side by side
 punchin dms                the dealership system as an MCP server, for the model to call
 ```
