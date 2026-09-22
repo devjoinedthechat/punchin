@@ -141,11 +141,3 @@ def call_id(scenario: str, agent: str, at: dt.datetime) -> str:
     """
     safe = re.sub(r"[^a-z0-9]+", "-", agent.lower()).strip("-")
     return f"{at:%Y%m%d-%H%M%S}-{secrets.token_hex(4)}-{scenario}-{safe}"
-
-
-def load_all(directory: Path) -> list[Call]:
-    return [Call.load(p) for p in sorted(directory.glob("*.json"))]
-
-
-def to_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)

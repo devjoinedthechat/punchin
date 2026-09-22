@@ -43,11 +43,15 @@ class Budget:
     def __init__(self, limit_usd: float) -> None:
         self.limit_usd = limit_usd
         self.spent_usd = 0.0
+        # What `charge` has already counted for the attempt in progress, so the attempt's own total is
+        # not added on top of it when the attempt finishes.
+        self.charged = 0.0
 
     def spend(self, amount: float) -> None:
         self.spent_usd += amount
 
     def charge(self, amount: float) -> None:
+        self.charged += amount
         self.spend(amount)
         if self.exhausted:
             raise BudgetSpent(f"spent ${self.spent_usd:.2f} of the ${self.limit_usd:.2f} allowed")
@@ -83,6 +87,7 @@ def fork_once(
     state_path: Path,
     wrap: Callable[[Customer], Customer] | None = None,
     make_customer: Callable[[Call], Customer] | None = None,
+    budget: Budget | None = None,
 ) -> Call:
     """One attempt: the turns before `at` from the recording, then the agent and the pinned customer live.
 
@@ -108,7 +113,7 @@ def fork_once(
     )
     forked.turns = prefix_turns
     try:
-        converse(forked, agent, customer, lead, dms)
+        converse(forked, agent, customer, lead, dms, budget=budget)
     finally:
         finish(forked, dms)
         # What the attempt really cost: the prefix was served from the recording and paid for nothing.
@@ -214,20 +219,27 @@ def fork(
         if budget is not None and budget.exhausted:
             report.stopped = f"budget of ${budget.limit_usd:.2f} spent after {len(report.attempts)} attempts"
             break
-        attempt = fork_once(
-            call,
-            scenario,
-            at,
-            agent=agent,
-            goal=goal,
-            model=model,
-            state_path=state_path,
-            wrap=wrap,
-            make_customer=make_customer,
-        )
+        try:
+            attempt = fork_once(
+                call,
+                scenario,
+                at,
+                agent=agent,
+                goal=goal,
+                model=model,
+                state_path=state_path,
+                wrap=wrap,
+                make_customer=make_customer,
+                budget=budget,
+            )
+        except BudgetSpent as spent:
+            # Stopped inside an attempt rather than between two. The partial call is already saved.
+            report.stopped = str(spent)
+            break
         report.attempts.append(attempt)
         if budget is not None:
-            budget.spend(float(attempt.notes.get("live_cost_usd", 0.0)))
+            budget.spend(float(attempt.notes.get("live_cost_usd", 0.0)) - budget.charged)
+            budget.charged = 0.0
         if out is not None:
             attempt.save(out)
     return report

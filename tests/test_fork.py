@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from punchin.agent import ScriptedAgent
+from punchin.agent import Lead, ScriptedAgent
 from punchin.call import Call
 from punchin.customer import CustomerTurn, ScriptedCustomer
 from punchin.dms import Dms, fresh
@@ -196,3 +196,55 @@ def test_a_fork_with_the_careless_agent_books_the_day_the_customer_took_back(
     assert report.before["correct"] is True
     assert report.fixed == 0
     assert "correct in 0 of 1 attempts (original: True)" in report.text()
+
+
+def test_the_budget_stops_a_call_that_runs_away_mid_attempt(tmp_path: Path) -> None:
+    """Checking between attempts is not enough: one looping call can spend a whole run's allowance."""
+    from punchin.fork import Budget, BudgetSpent
+    from punchin.record import converse
+
+    spent: list[float] = []
+
+    class Expensive:
+        name = "expensive"
+
+        def respond(self, call, lead, dms):
+            from punchin.agent import AgentTurn
+
+            spent.append(1.0)
+            return AgentTurn("Hej igen.", [], None, 1.0)
+
+    class Endless:
+        name = "endless"
+
+        def respond(self, call):
+            return CustomerTurn("Ja?")
+
+    call = Call(
+        id="c",
+        scenario="self-correction",
+        agent="a",
+        customer="c",
+        started_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+    )
+    dms = Dms(tmp_path / "s.json")
+    dms.save(fresh([SCENARIO.vehicle]))
+    budget = Budget(3.0)
+    with pytest.raises(BudgetSpent, match=r"\$3\.00"):
+        converse(call, Expensive(), Endless(), Lead("x", SCENARIO.vehicle.syn_due), dms, budget=budget)
+    assert len(spent) == 3  # stopped within one turn of the limit, not one attempt
+    assert len(call.turns) >= 3  # and what was said before it stopped is on the recording
+
+
+def test_a_budget_is_not_charged_twice_for_the_same_attempt(tmp_path: Path) -> None:
+    """`charge` counts a turn as it happens; the attempt's total must not then be added on top."""
+    from punchin.fork import Budget
+
+    budget = Budget(100.0)
+    budget.charge(0.30)
+    assert budget.charged == pytest.approx(0.30)
+    assert budget.spent_usd == pytest.approx(0.30)
+    # what fork() does when an attempt finishes: top up to the attempt's real total, once
+    budget.spend(0.50 - budget.charged)
+    budget.charged = 0.0
+    assert budget.spent_usd == pytest.approx(0.50)

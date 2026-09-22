@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from pathlib import Path
+from typing import Protocol
 
 from punchin.agent import Agent, Lead
 from punchin.call import Call, Turn, call_id
@@ -17,14 +18,33 @@ MAX_TURNS = 20
 log = logging.getLogger(__name__)
 
 
+class Spender(Protocol):
+    """Whatever is keeping the bill. `punchin.fork.Budget` is the one this package ships."""
+
+    def charge(self, amount: float) -> None:
+        """Add to the running total, and raise if the allowance has gone."""
+
+
 def now() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
 
 
 def converse(
-    call: Call, agent: Agent, customer: Customer, lead: Lead, dms: Dms, *, max_turns: int = MAX_TURNS
+    call: Call,
+    agent: Agent,
+    customer: Customer,
+    lead: Lead,
+    dms: Dms,
+    *,
+    max_turns: int = MAX_TURNS,
+    budget: Spender | None = None,
 ) -> Call:
-    """Alternate agent and customer turns onto `call` until one of them ends it."""
+    """Alternate agent and customer turns onto `call` until one of them ends it.
+
+    `budget` is charged per turn rather than per call. Checking between calls is not enough: one call
+    that loops can spend a whole run's allowance before anything looks at it, and the caller then finds
+    out by reading the bill.
+    """
     while len(call.turns) < max_turns:
         at = now()
         spoken = agent.respond(call, lead, dms)
@@ -39,6 +59,8 @@ def converse(
             cost_usd=spoken.cost_usd,
         )
         call.turns.append(turn)
+        if budget is not None:
+            budget.charge(turn.cost_usd)
         log.info("%2d agent  %s", turn.index, _short(turn.spoken))
         for made in turn.tool_calls:
             log.info("        -> %s %s", made.tool, "ERROR" if made.error else "ok")
@@ -85,7 +107,13 @@ def finish(call: Call, dms: Dms) -> Call:
 
 
 def record(
-    scenario: Scenario, agent: Agent, customer: Customer, state_path: Path, out: Path | None = None
+    scenario: Scenario,
+    agent: Agent,
+    customer: Customer,
+    state_path: Path,
+    out: Path | None = None,
+    *,
+    budget: Spender | None = None,
 ) -> Call:
     dms = Dms(state_path)
     dms.save(fresh([scenario.vehicle]))
@@ -99,7 +127,7 @@ def record(
         started_at=started,
     )
     try:
-        converse(call, agent, customer, lead, dms)
+        converse(call, agent, customer, lead, dms, budget=budget)
     finally:
         # A call that died halfway is the interesting one; keep whatever was said before it broke.
         finish(call, dms)

@@ -204,7 +204,13 @@ def measure(
             )
         )
         if budget is not None:
-            budget.spend(live.calls[-1].cost_usd + fork_scripted.cost_usd + fork_pinned.cost_usd)
+            # This trial only. `Arm.cost_usd` is the running total for the arm, and adding that every
+            # time round charged the first trial once, the second twice, the third three times.
+            budget.spend(
+                live.calls[-1].cost_usd
+                + float(fork_scripted.calls[-1].notes.get("live_cost_usd", 0.0))
+                + float(fork_pinned.calls[-1].notes.get("live_cost_usd", 0.0))
+            )
 
     return Soundness(scenario, at, change, baseline, live, fork_scripted, fork_pinned)
 
