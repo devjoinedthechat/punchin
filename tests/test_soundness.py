@@ -191,26 +191,30 @@ def test_soundness_can_be_run_on_an_agent_punchin_does_not_own(
     before.write_text(BASELINE_AGENT)
     after.write_text(CHANGED_AGENT)
 
-    code = main(
-        [
-            "soundness",
-            "--scenario",
-            "self-correction",
-            "--trials",
-            "1",
-            "--at",
-            "0",
-            "--agent",
-            "command",
-            "--baseline-command",
-            f"{sys.executable} {before}",
-            "--agent-command",
-            f"{sys.executable} {after}",
-            "--out",
-            str(tmp_path / "out"),
-            "-q",
-        ]
-    )
+    # Both agents are the caller's, but the pinned customer still needs a model. The stand-in binary
+    # plays it, so this runs on a machine with no Claude Code — which is what CI is.
+    stand_in = ClaudeCodeModel([sys.executable, str(FAKE)])
+    with patch("punchin.commands.model_for", return_value=stand_in):
+        code = main(
+            [
+                "soundness",
+                "--scenario",
+                "self-correction",
+                "--trials",
+                "1",
+                "--at",
+                "0",
+                "--agent",
+                "command",
+                "--baseline-command",
+                f"{sys.executable} {before}",
+                "--agent-command",
+                f"{sys.executable} {after}",
+                "--out",
+                str(tmp_path / "out"),
+                "-q",
+            ]
+        )
     assert code == 0
     printed = capsys.readouterr().out
     assert "ground truth" in printed

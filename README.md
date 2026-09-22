@@ -17,7 +17,6 @@
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
   <img src="https://img.shields.io/badge/tests-192-brightgreen" alt="192 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
-  <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
 
 <p align="center">
@@ -461,8 +460,6 @@ turn rather than on their averages:
 
   Paired by turn, so turn difficulty cancels.
 ```
-
-<!-- MEASURED-ABLATION -->
 
 The repeats are not optional politeness, and neither is the pairing. Four runs of one call with the
 identical goal state came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting a fifth.
