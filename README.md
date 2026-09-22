@@ -545,19 +545,46 @@ punchin fidelity <call> --goal truth --discriminate
 shows a model the conversation so far and two candidate next turns — one real, one simulated, in random
 order — and asks which came from the real customer. **Fifty per cent means it cannot tell.**
 
-```
-  real vs simulated          6/12  = 50%  (25%-75%)   want 50%
-  blind (real vs real)       6/12  = 50%  (25%-75%)   want 50%
-  floor (real vs another call) 11/12 = 92%  (65%-99%)  want high
+A five-turn call is five judgements, and five judgements put the interval somewhere around 12% to 77%,
+which covers a faithful simulator and an obvious one alike. The turn is the unit that was measured, so
+pass the archive and the turns pool:
 
-  indistinguishable at this sample size: the interval covers 50%
 ```
+$ punchin fidelity .punchin/calls/*.json --goal truth --discriminate --summary
+
+10 calls: can anything tell her from the simulator?
+
+  real vs simulated         13/47  = 28%  (17%-42%)   want 50%
+  blind (real vs real)      28/47  = 60%  (45%-72%)   want 50%
+  floor (real vs another call)  40/47  = 85%  (72%-93%)   want high
+
+  distinguishable, but inverted: the judge named the simulated turn as the real one 72% of the
+  time, and the interval misses 50%. The simulator is not failing to sound like her — it sounds
+  more like a person than the recording does.
+    picked the simulator because: Naturlig telefonrespons med "øh, ja tak" og det afdæmpede
+      "passer ikke helt" virker autentisk - ikke konstrueret som B
+    picked the simulator because: Svar A er helt dansk og naturligt; B skifter unaturligt til
+      engelsk midt i sætningen
+  $1.364
+```
+
+**Below fifty is not "nearly fooled".** A judge that is reliably wrong carries exactly as much signal as
+one reliably right, with the label inverted, so the arm reports the direction rather than burying it in
+a percentage. Here the simulator is detectable because it is the *smoother* of the two.
+
+Read the second reason before concluding anything about the simulator. The judge rejected the real turn
+for switching to English mid-sentence — and `code-switch` is a scenario in this corpus, where the real
+customer does exactly that on purpose. The customers on these recordings are scripted, terse and built
+to be awkward in specific ways; the simulator writes fluent Danish. **What is detectable here is partly
+the script.** Run it against recordings of people and the number is about the simulator; run it against
+this corpus and it is about both.
 
 The usual objection to a model judging a model is that the scale is invented and nobody can check it.
 That does not apply here, because **this judge is calibrated against known answers**. The *blind*
-control shows it the real turn against itself: anything but 50% is a position bias. The *floor* control
-shows it a real turn against a real turn from a different call: if it cannot spot that, it is not
-discriminating at all. A run that fails either control is reported as saying nothing.
+control shows it the real turn against itself: anything but 50% is a position bias — 60% with an
+interval of 45%–72% covers 50%, so it passes, but not by much. The *floor* control shows it a real turn
+against a real turn from a different call: at 85% it is discriminating. A run that fails either control
+is reported as saying nothing, and single calls in this corpus do fail them.
 
 It also gives the noise for free. The measurement is binomial, so the interval is exact rather than
 estimated — which is the one thing [the overlap metric](#is-the-simulated-customer-the-real-one) cannot
@@ -751,11 +778,17 @@ change, not for scoring an agent.
 **Soundness is checked, not established.** Three trials, one scenario, every arm at its ceiling. A fix
 that works only some of the time would test it properly, and engineering one deliberately is unsolved.
 
-**Fidelity is noisier than what it measures.** Repeated runs of one call spread 0.13 to 0.23; the
-goal-state fields are worth 0.03 to 0.10 each. Pairing and `--repeat` make the gap visible rather than
-closing it, so no field can be called worthless yet. `--discriminate` sidesteps the estimate — its
-interval is binomial — but a five-turn call is twelve judgements, and twelve judgements cannot separate
-a faithful simulator from one caught six times in ten.
+**Fidelity is noisier than what it measures.** Repeated runs of one call spread 0.13 to 0.23, and the
+noisiest arm of an ablation moved 0.33 on its own; the goal-state fields are worth around 0.04. Pairing
+and `--repeat` make the gap visible rather than closing it, and on one call no field clears two standard
+errors, so nothing can be called worthless yet. Pooling the whole archive is what the ablation still
+needs and the discriminator already has.
+
+**The discriminator is measured against a scripted customer.** Pooled over the corpus the simulator is
+distinguishable, and it is distinguishable for reading as *more* natural than the recording — the real
+turns here are a script written to be awkward in specific ways, one of which is switching to English
+mid-sentence on purpose. The controls hold, so the separation is real, but attributing it entirely to
+the simulator would be wrong. The number that would settle it comes from recordings of people.
 
 **A curve costs one fork per turn.** `punchin curve` is the most expensive thing here: a ten-turn call
 at three repeats is fifteen forks. The prefix is free and shrinks as the fork point rises, so it is
