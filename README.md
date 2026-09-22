@@ -427,7 +427,9 @@ the customer and the agent, both lines are shown: what she said, and under it wh
 ```sh
 uv sync
 uv run pytest -q
-uv run ruff format src tests && uv run ruff check src tests && uv run mypy
+uv run ruff format src tests examples scripts
+uv run ruff check src tests examples scripts && uv run mypy
+uv run python scripts/import_smoke.py     # reading somebody else's transcript still works
 ```
 
 The suite needs no API key and no `claude` binary: a scripted stand-in speaks Claude Code's stream-json,
@@ -436,6 +438,7 @@ faster-whisper are all present, and `-m slow` holds the two that need a recognis
 
 ```
 punchin scenarios          the corpus, and the outcome each call expects
+punchin import             somebody else's transcript, plus the outcome you say was right
 punchin record             run a scenario, optionally spoken and over a phone band
 punchin show               a recording, with its fork points and what was heard
 punchin metrics            outcome and feel numbers, as a table or --json
