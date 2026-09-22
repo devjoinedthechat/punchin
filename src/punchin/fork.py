@@ -319,13 +319,14 @@ class Sweep:
         lines = [f"{self.change}", f"  across {len(self.reports)} calls:"]
         for name in ("fixed", "broke", "still wrong", "held"):
             if found[name]:
-                lines.append(f"    {name:12} {len(found[name]):3}  {', '.join(found[name][:6])}")
+                lines.append(f"    {name:12} {len(found[name]):3}  {_names(found[name])}")
         lines.append("")
         if found["broke"]:
-            lines.append(
-                f"  This change breaks {len(found['broke'])} call(s) that were right before. "
-                f"Fixing {len(found['fixed'])} is not the number to look at."
-            )
+            broke = f"  This change breaks {len(found['broke'])} call(s) that were right before"
+            if found["fixed"]:
+                lines.append(f"{broke}. Fixing {len(found['fixed'])} is not the number to look at.")
+            else:
+                lines.append(f"{broke}, and fixes none.")
         elif found["fixed"]:
             lines.append(f"  Fixes {len(found['fixed'])}, breaks nothing.")
         else:
@@ -334,6 +335,13 @@ class Sweep:
         if self.stopped:
             lines.append(f"  stopped early: {self.stopped}")
         return "\n".join(lines)
+
+
+def _names(names: list[str], show: int = 6) -> str:
+    """Never print six names against a count of nine without saying so."""
+    if len(names) <= show:
+        return ", ".join(names)
+    return f"{', '.join(names[:show])}, and {len(names) - show} more"
 
 
 def sentences(change: str) -> list[str]:

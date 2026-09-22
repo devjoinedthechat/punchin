@@ -175,6 +175,33 @@ class Discrimination:
         return "\n".join(lines)
 
 
+def pooled(runs: Sequence[Discrimination]) -> Discrimination:
+    """One verdict over many calls, because a single call cannot carry one.
+
+    A five-turn call is five judgements, and five judgements put the interval somewhere around
+    12% to 77% — wide enough to cover both a faithful simulator and an obvious one. The turn is the
+    unit that was measured, so the turns are what get pooled; the controls pool with them, which is
+    also the only way the floor threshold means anything.
+    """
+    if not runs:
+        raise ValueError("nothing to pool")
+    together = Discrimination(
+        f"{len(runs)} calls",
+        Round("real vs simulated", "50%"),
+        Round("blind (real vs real)", "50%"),
+        Round("floor (real vs another call)", "high"),
+    )
+    for one in runs:
+        for into, arm in (
+            (together.paired, one.paired),
+            (together.blind, one.blind),
+            (together.floor, one.floor),
+        ):
+            into.guesses.extend(arm.guesses)
+            into.cost_usd += arm.cost_usd
+    return together
+
+
 def _ask(
     model: Model, prefix: Call, *, real: str, other: str, index: int, seed: random.Random
 ) -> tuple[Guess, float]:

@@ -312,3 +312,23 @@ def test_ablating_a_single_sentence_change_is_refused(corpus: list[Call], tmp_pa
                 "-q",
             ]
         )
+
+
+def test_a_change_that_only_breaks_does_not_claim_fixing_zero_is_the_wrong_number() -> None:
+    """'Fixing 0 is not the number to look at' is a sentence no one should have to read."""
+    sweep = Sweep(
+        "system suffix 'x'",
+        [_report("hurried", True, 0, 1), _report("plain-booking", True, 1, 1)],
+    )
+    printed = sweep.text()
+    assert "breaks 1 call(s) that were right before, and fixes none." in printed
+    assert "Fixing 0" not in printed
+
+
+def test_a_long_list_of_calls_says_how_many_it_left_out() -> None:
+    """Six names printed against a count of nine reads as a contradiction."""
+    ids = [s.id for s in SCENARIOS][:9]
+    held = [_report(name, True, 1, 1) for name in ids]
+    printed = Sweep("system suffix 'x'", held).text()
+    assert "held           9" in printed
+    assert "and 3 more" in printed

@@ -117,3 +117,37 @@ def test_the_judge_sees_what_was_said_not_what_was_heard() -> None:
     judge = Judge()
     discriminate(call, SCENARIO.goal, judge, workers=1)
     assert not any("tvak" in asked for asked in judge.asked)
+
+
+def test_many_calls_pool_into_one_verdict_because_a_single_call_cannot_carry_one() -> None:
+    """Five turns puts the interval near 12%-77%, which covers a faithful simulator and an obvious one."""
+    from punchin.discriminate import pooled
+
+    def run(name: str, paired_right: int, of: int) -> Discrimination:
+        p = Round("real vs simulated", "50%")
+        p.guesses = [Guess(i, "r", "s", "real", i < paired_right, "") for i in range(of)]
+        p.cost_usd = 0.1
+        b = Round("blind", "50%")
+        b.guesses = [Guess(i, "r", "r", "real", i % 2 == 0, "") for i in range(of)]
+        f = Round("floor", "high")
+        f.guesses = [Guess(i, "r", "o", "real", True, "") for i in range(of)]
+        return Discrimination(name, p, b, f)
+
+    alone = run("one call", 2, 5)
+    low, high = alone.paired.interval()
+    assert high - low > 0.5  # no power at all on its own
+
+    together = pooled([run(f"call {i}", 2, 5) for i in range(10)])
+    assert len(together.paired.guesses) == 50
+    assert together.paired.correct == 20
+    wide = together.paired.interval()
+    assert wide[1] - wide[0] < 0.3  # pooling is what buys the interval
+    assert together.cost_usd == pytest.approx(1.0)
+    assert "10 calls" in together.text()
+
+
+def test_pooling_nothing_is_refused() -> None:
+    from punchin.discriminate import pooled
+
+    with pytest.raises(ValueError, match="nothing to pool"):
+        pooled([])

@@ -278,9 +278,15 @@ class Ablated:
     dropped: dict[str, Repeated] = field(default_factory=dict)
 
     @property
+    def noisiest(self) -> tuple[str, float]:
+        """The arm that moved most between repeats of itself, named so it can be checked."""
+        arms = [("everything", self.full.spread), *((n, a.spread) for n, a in self.dropped.items())]
+        return max(arms, key=lambda arm: arm[1], default=("everything", 0.0))
+
+    @property
     def noise(self) -> float:
         """The widest spread any single arm showed. A delta under this is not a finding."""
-        return max([self.full.spread, *(arm.spread for arm in self.dropped.values())], default=0.0)
+        return self.noisiest[1]
 
     def worth(self, name: str) -> tuple[float, float, int]:
         return paired(self.full, self.dropped[name])
@@ -302,8 +308,9 @@ class Ablated:
             lines.append(f"  {name:18} {middle:+8.3f} {error:8.3f} {count:6}   {verdict}")
         spent = self.full.cost_usd + sum(a.cost_usd for a in self.dropped.values())
         lines.append(
-            f"\n  Paired by turn, so turn difficulty cancels. Run-to-run spread on the whole call was "
-            f"{self.noise:.2f}, which is why the means alone say nothing. ${spent:.3f}."
+            f"\n  Paired by turn, so turn difficulty cancels. Repeats of one unchanged arm "
+            f"({self.noisiest[0]}) still moved by {self.noise:.2f}, which is why the means alone say "
+            f"nothing. ${spent:.3f}."
         )
         return "\n".join(lines)
 

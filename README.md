@@ -308,19 +308,22 @@ A change that repairs one call and breaks three is worse than no change. Give `f
 and it applies the same change to all of them:
 
 ```sh
-punchin fork .punchin/calls/*.json --at half --repeat 3 --system-suffix "..."
+punchin fork .punchin/calls/*.json --at half --system-suffix "Tilbyd kun én tid ad gangen. …"
 ```
 
 ```
-system suffix 'Tilbyd kun én tid ad gangen.'
+system suffix 'Tilbyd kun én tid ad gangen. Nævn aldrig flere klokkeslæt i samme replik.'
   across 10 calls:
-    fixed          4  plain-booking, self-correction, next-week, hurried
-    broke          1  courtesy-car
-    held           5  …
+    broke          1  hurried
+    held           9  already-booked, code-switch, courtesy-car, is-it-a-robot, next-week, and 4 more
 
-  This change breaks 1 call(s) that were right before. Fixing 4 is not the number to look at.
-  live cost $0.41; every prefix was free
+  This change breaks 1 call(s) that were right before, and fixes none.
+  live cost $0.960; every prefix was free
 ```
+
+That is the run, not an illustration. The one-slot-at-a-time rule is the obvious fix for an agent that
+reads out five times in a row — and across the archive it repairs nothing and costs a call: the customer
+in a hurry wants the first time that works, and being walked through them one by one is not that.
 
 It exits non-zero when anything broke, so a sweep is something a pull request can run. `--at` takes a
 turn number, or `first`, `half` or `last` — resolved against each recording's own agent turns, because
@@ -561,31 +564,41 @@ drops one part of the goal state at a time, measures each arm several times, and
 turn rather than on their averages:
 
 ```
-  everything           jaccard 0.74  spread 0.11  (0.70 0.81 0.72)
+  everything                 jaccard 0.58  spread 0.03  (0.57 0.60 0.57)  over 5 turns  $0.112
 
-  field                 paired   ± s.e.  turns   verdict
-  manner                +0.104    0.031     15   carries its weight
-  reveals               +0.018    0.040     15   not distinguishable from zero
-  mood                  -0.007    0.036     15   not distinguishable from zero
+  field                paired   ± s.e.  turns   verdict
+  manner               +0.044    0.090     15   not distinguishable from zero
+  extras               +0.033    0.049     15   not distinguishable from zero
+  prefers_time         +0.022    0.105     15   not distinguishable from zero
+  reveals              +0.000    0.061     15   not distinguishable from zero
+  constraints          +0.000    0.059     15   not distinguishable from zero
+  mood                 -0.044    0.047     15   not distinguishable from zero
 
-  Paired by turn, so turn difficulty cancels.
+  Paired by turn, so turn difficulty cancels. Repeats of one unchanged arm (mood) still
+  moved by 0.33, which is why the means alone say nothing. $0.774.
 ```
 
+**Not one field clears the bar on a single call.** That is the honest answer at fifteen paired turns, and
+it is the answer the table is built to be able to give: the largest effect here, `manner` at +0.044, sits
+well inside its own standard error. What the run rules out is a field worth 0.20; what it cannot yet rule
+out is a field worth 0.04.
+
 The repeats are not optional politeness, and neither is the pairing. Four runs of one call with the
-identical goal state came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting a fifth.
-The fields are worth 0.03 to 0.10 each. Comparing the arms' averages therefore cannot see them at all: a
-single-run ablation of that call produced a confident-looking table showing four of six fields as
-actively harmful, every delta of which was inside the sampler.
+identical goal state came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting a fifth;
+the noisiest arm above moved 0.33 on its own. Comparing the arms' averages therefore cannot see a field
+worth 0.04 at all: a single-run ablation of that call produced a confident-looking table showing four of
+six fields as actively harmful, every delta of which was inside the sampler.
 
 Pairing fixes that properly rather than by brute force. Most of the variance is turn difficulty — a turn
 where the customer says *"Ja."* scores differently from one where she corrects herself, whatever the
 goal state says — and that difficulty is **identical on both sides of the comparison**. Taking the
-difference turn by turn cancels it, so a field worth 0.10 becomes visible through 0.13 of run-to-run
-spread instead of drowning in it.
+difference turn by turn cancels it, which is what brings a standard error of 0.05 within reach of a
+field worth 0.10 — through run-to-run spread several times that size.
 
 A field whose paired difference sits inside two standard errors of zero is reported as *not
-distinguishable from zero*. One that stays there is a field the simulator was never using, and it should
-come out of the schema rather than sit there looking principled.
+distinguishable from zero*. One that stays there across calls is a field the simulator was never using,
+and it should come out of the schema rather than sit there looking principled — but one call is not
+across calls, which is why the table above removes nothing yet.
 
 Budget for it. Seven arms at three repeats over a five-turn call is a hundred model calls, and each one
 is a separate process — tens of minutes and a few tenths of a dollar even with `--workers`. This is a

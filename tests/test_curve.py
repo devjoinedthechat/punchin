@@ -1,12 +1,24 @@
 """Where a call was lost, and where it was still savable."""
 
 import datetime as dt
+import json
+import sys
+from pathlib import Path
+from unittest.mock import patch
 
+import pytest
+
+from punchin.agent import ScriptedAgent
 from punchin.call import Call
+from punchin.cli import main
 from punchin.curve import Curve, Point
+from punchin.customer import ScriptedCustomer
+from punchin.model import ClaudeCodeModel
+from punchin.record import record
 from punchin.scenarios import BY_ID
 
 SCENARIO = BY_ID["self-correction"]
+FAKE = Path(__file__).parent / "fixtures" / "fake_claude.py"
 
 
 class _Report:
@@ -85,3 +97,58 @@ def test_a_point_knows_whether_it_settled() -> None:
 
 def test_an_empty_curve_says_nothing_rather_than_guessing() -> None:
     assert "nothing measured" in _curve([]).text()
+
+
+def _recorded(tmp_path: Path) -> Path:
+    """One careful recording on disk, for the command to fork."""
+    state = tmp_path / "s.json"
+    call = record(SCENARIO, ScriptedAgent(careful=True), ScriptedCustomer(SCENARIO), state, tmp_path)
+    return tmp_path / f"{call.id}.json"
+
+
+def _flags(call: Path, out: Path, *extra: str) -> list[str]:
+    """One curve run against the stand-in model, with everything it needs and nothing it does not."""
+    return [
+        "curve", str(call), "--agent", "careless", "--goal", "truth",
+        "--repeat", "1", "--out", str(out), "--max-usd", "1", "-q", *extra,
+    ]  # fmt: skip
+
+
+def test_the_command_forks_every_agent_turn_and_prints_the_shape(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """The whole path: load, resolve the truth goal, fork at each turn, print one row."""
+    stand_in = ClaudeCodeModel([sys.executable, str(FAKE)])
+    with patch("punchin.commands.model_for", return_value=stand_in):
+        code = main(_flags(_recorded(tmp_path), tmp_path / "curve"))
+    printed = capsys.readouterr().out
+    assert code == 0
+    assert "fork at" in printed and "correct" in printed
+
+
+def test_the_command_leaves_no_dms_state_behind(tmp_path: Path) -> None:
+    """Every fork point shares one scratch file; a leftover would grade the next run against it."""
+    out = tmp_path / "curve"
+    stand_in = ClaudeCodeModel([sys.executable, str(FAKE)])
+    with patch("punchin.commands.model_for", return_value=stand_in):
+        main(_flags(_recorded(tmp_path), out))
+    assert not (out / ".dms-state.json").exists()
+
+
+def test_the_curve_survives_as_json(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    """`--json` is what a pull request reads; it must parse and carry every fork point."""
+    stand_in = ClaudeCodeModel([sys.executable, str(FAKE)])
+    with patch("punchin.commands.model_for", return_value=stand_in):
+        main(_flags(_recorded(tmp_path), tmp_path / "curve", "--json"))
+    found = json.loads(capsys.readouterr().out)
+    assert found["points"] and all("at" in point for point in found["points"])
+
+
+def test_an_ungraded_call_is_refused_before_anything_is_spent(tmp_path: Path) -> None:
+    """A recording nobody wrote an outcome for cannot be scored, and saying so early is free."""
+    path = _recorded(tmp_path)
+    call = json.loads(path.read_text())
+    call["scenario"] = "no-such-scenario"
+    path.write_text(json.dumps(call))
+    with pytest.raises(SystemExit, match="no-such-scenario"):
+        main(["curve", str(path), "--agent", "careless", "--goal", "truth", "--out", str(tmp_path), "-q"])

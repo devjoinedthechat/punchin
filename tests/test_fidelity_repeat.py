@@ -188,3 +188,23 @@ def test_a_corpus_of_long_calls_gets_no_warning() -> None:
             self.mean_jaccard, self.exact_rate, self.cost_usd = 0.8, 0.0, 0.0
 
     assert "coin flip" not in across([FakeReport(), FakeReport()])  # type: ignore[list-item]
+
+
+def test_the_noise_line_names_the_arm_it_came_from() -> None:
+    """0.33 called 'the whole call' when the whole call moved 0.03 is a misread waiting to happen."""
+
+    class FakeRun:
+        def __init__(self, score: float) -> None:
+            self.mean_jaccard = score
+            self.cost_usd = 0.0
+            self.turns: list[object] = []
+
+    def arm(*scores: float) -> Repeated:
+        found = Repeated("c")
+        found.runs = [FakeRun(s) for s in scores]  # type: ignore[list-item]
+        return found
+
+    ablated = Ablated("c", arm(0.57, 0.60, 0.57), {"mood": arm(0.40, 0.73, 0.55)})
+    name, spread = ablated.noisiest
+    assert name == "mood"
+    assert f"one unchanged arm (mood) still moved by {spread:.2f}" in ablated.text()

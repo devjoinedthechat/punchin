@@ -19,7 +19,7 @@ from punchin.call import Call
 from punchin.check import baseline_from, by_scenario, check, load_baseline
 from punchin.curve import measure as curve_of
 from punchin.customer import Customer, ScriptedCustomer
-from punchin.discriminate import discriminate
+from punchin.discriminate import discriminate, pooled
 from punchin.dms import TODAY, normalize_reg, serve
 from punchin.doctor import examine, report
 from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
@@ -200,7 +200,8 @@ def cmd_extract(args: argparse.Namespace) -> int:
 
 def cmd_fidelity(args: argparse.Namespace) -> int:
     model = model_for(args)
-    reports = []
+    reports: list[Any] = []
+    told: list[Any] = []
     for path in args.call:
         call = Call.load(Path(path))
         goal: GoalState
@@ -217,7 +218,11 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
                 for turn in Call.load(Path(other)).turns
                 if turn.speaker == "customer"
             ]
-            print(discriminate(call, goal, model, elsewhere=others, workers=args.workers).text())
+            judged = discriminate(call, goal, model, elsewhere=others, workers=args.workers)
+            told.append(judged)
+            if not args.summary:
+                print(judged.text())
+                print()
             continue
 
         if args.ablate:
@@ -234,6 +239,8 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         if not args.summary:
             print()
 
+    if told:
+        print(pooled(told).text() if len(told) > 1 else "")
     if len(reports) > 1:
         print(across(reports))
     return 0
