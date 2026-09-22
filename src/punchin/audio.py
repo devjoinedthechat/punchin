@@ -30,6 +30,9 @@ WORDS_PER_MINUTE = 180
 # and still loses them down a phone line, which is the interesting case.
 DEFAULT_MODEL = "small"
 SAMPLE_RATE = 16000
+# How long a vocabulary may be before it stops going into `initial_prompt`. The corpus's call list is
+# around 120 characters and never leaked; four times that came back as the transcript on twelve turns.
+PROMPT_BUDGET = 200
 
 
 def available() -> tuple[bool, str]:
@@ -130,12 +133,24 @@ class Recognizer:
             self._model = WhisperModel(self.size, device="cpu", compute_type="int8")
         return self._model
 
+    def bias(self) -> dict[str, str]:
+        """How the vocabulary is given to the decoder, and why the prompt has a length budget.
+
+        `initial_prompt` conditions the decoder as if it were speech that came just before, so a long
+        one is something the decoder can plausibly continue. Measured over the corpus: the call list
+        alone never came back in a transcript, while a list padded with weekdays and opening hours came
+        back on twelve turns — a customer saying "Tirsdag." was transcribed "En samtale om en
+        tidligste." Under the budget both are used, which reads the most plates; over it, hotwords only.
+        """
+        if not self.vocabulary:
+            return {}
+        given = {"hotwords": self.vocabulary}
+        if len(self.vocabulary) <= PROMPT_BUDGET:
+            given["initial_prompt"] = f"Kunden oplyser en dansk nummerplade: {self.vocabulary}."
+        return given
+
     def hear(self, path: Path) -> str:
-        bias: dict[str, str] = {}
-        if self.vocabulary:
-            bias["hotwords"] = self.vocabulary
-            bias["initial_prompt"] = f"En samtale om en tid til syn. Forventede ord: {self.vocabulary}."
-        segments, _ = self.model.transcribe(str(path), language=self.language, beam_size=5, **bias)
+        segments, _ = self.model.transcribe(str(path), language=self.language, beam_size=5, **self.bias())
         return " ".join(str(segment.text).strip() for segment in segments).strip()
 
 

@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-44-brightgreen" alt="44 tests">
+  <img src="https://img.shields.io/badge/tests-48-brightgreen" alt="48 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -205,49 +205,70 @@ stopped measuring anything, and that is a failure before a model is ever run.
 
 The corpus can be spoken instead of typed. The customer's line is rendered with the one Danish voice
 macOS ships, put through the 8 kHz G.711 mu-law band a telephone call actually uses, and handed to
-faster-whisper. **The agent then reads what the recogniser produced and never what was said** — what
-was said stays on the turn as the answer key, which is what makes the loss measurable.
+faster-whisper. **The agent then reads what the recogniser produced and never what was said** — what was
+said stays on the turn as the answer key, which is what makes the loss measurable.
 
 ```sh
-uv run punchin record --agent careful --audio             # down a phone line
-uv run punchin record --agent careful --audio --studio    # a clean microphone, for comparison
+uv run punchin record --agent careful --audio --bias      # a phone line, recogniser told the call list
+uv run punchin record --agent careful --audio             # the same line, told nothing
+uv run punchin record --agent careful --audio --studio    # a clean microphone
 ```
 
-The scripted agent reaches the right outcome on all ten scenarios in text. Once it has to listen:
+### What the number plate survives
 
-| | plates that survived | calls that completed | agent repeated itself | customer hung up |
-|---|---|---|---|---|
-| text | 10 / 10 | 10 / 10 | 1 | 0 / 10 |
-| studio microphone | 2 / 10 | 2 / 10 | up to 5 | 8 / 10 |
-| through a phone line | **0 / 10** | 0 / 10 | up to 5 | 10 / 10 |
+A dealership calling about a service knows which cars it is ringing before the phone rings, so the call
+list is something a production agent has and a naive one ignores. Passing it to the decoder is the
+difference between reading a plate and inventing one. Ten plates, spoken and put through the phone band:
 
-The plate is the whole story, and one digit is enough:
+| decoding | plates read correctly | prompt text appearing in transcripts |
+|---|---|---|
+| nothing passed to the decoder | 1 / 10 | — |
+| call list as hotwords | 7 / 10 | none |
+| call list as hotwords and a short prompt | 8 / 10 | none |
+| that list padded with weekdays and opening hours | 5 / 10 | **12 turns** |
+
+The last row is the one worth keeping. `initial_prompt` conditions the decoder as though it were speech
+that came just before, so a long one is something the decoder can plausibly continue — and it does. A
+customer saying *"Tirsdag."* came back as *"En samtale om en tidligste."*, which is a fragment of the
+prompt itself. The call list alone, around 120 characters, never leaked once across the whole corpus.
+punchin therefore always passes the vocabulary as hotwords and only adds it to the prompt while it stays
+under a length budget, which is a constant in `audio.py` with the measurement in its comment.
+
+Two cautions on these figures. They come from **synthesized** Danish, not a human caller, and a TTS
+voice is a different and in places harder distribution for a recogniser. And rewording the prompt by a
+few words moves the end-to-end result by a plate either way, so the step change from 1 is the finding,
+not the digit.
+
+### What the call survives
+
+The scripted agent reaches the right outcome on all ten scenarios in text. Once it has to listen, over a
+phone line with the call list passed to the decoder, three do. The plate is not the only thing lost:
 
 ```
    3 Kunde CD 67 890.
-      heard: CD 67850
-   4 Agent Den kan jeg ikke finde i systemet. Kan du sige nummerpladen igen?
-         -> lookup_vehicle({'reg': 'CD67850'}) ERROR no vehicle registered as 'CD67850'
-   6 Agent Den kan jeg ikke finde i systemet. Kan du sige nummerpladen igen?
-         -> lookup_vehicle({'reg': 'CD67850'}) ERROR no vehicle registered as 'CD67850'
+      heard: CD 67 890                                   <- the plate arrives
+   4 Agent Tak, så er det din Toyota Yaris. Hvilken dag passer dig?
+         -> lookup_vehicle({'reg': 'CD67890'})
+   5 Kunde Torsdag formiddag ville være godt.
+      heard: 2. derform i dag ville være godt.           <- the day does not
+   6 Agent Hvilken dag passer dig bedst?
 ```
 
-Two things fall out of that table which text could not have shown.
+Adding the weekdays to the decoder's vocabulary was the obvious fix, and it was measured and rejected:
+it cost two plates and did not rescue the day. The day is not an ASR vocabulary problem. It is a missing
+sentence in the conversation — *"onsdag den 30., er det rigtigt?"* — and that is an agent change, which
+is what `punchin fork` is for.
+
+Two things fall out that text could not have shown.
 
 **The agent has no fallback.** It is optimal on the text corpus and helpless when an entity fails twice:
 it never spells the plate back, never asks for the make instead, never offers a person. The customer
-hears the same sentence four times and hangs up. That is a missing path, not a bad prompt, and it only
-appears when something can go wrong between a mouth and a tool call.
+hears the same sentence four or five times and hangs up. That is a missing path rather than a bad
+prompt, and it only appears once something can go wrong between a mouth and a tool call.
 
-**Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True` through a
-phone line, because the right outcome there is no booking and the call collapsed before making one. The
-feel columns are the only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`,
-`ended_by=customer`.
-
-One caveat, stated plainly: this is **synthesized** Danish, not a human caller, and a TTS voice is a
-different — in places harder — distribution for a recogniser. These numbers show the shape of the
-failure and the cost of the phone band. They are not an estimate of what a production Danish agent does
-with real customers.
+**Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True`, because
+the right outcome there is no booking and the call collapsed before making one. The feel columns are the
+only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`, `ended_by=customer`.
 
 ## What it does not do
 

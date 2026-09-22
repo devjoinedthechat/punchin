@@ -308,14 +308,14 @@ def call_list() -> str:
 
 
 def vocabulary() -> str:
-    """Everything a syn-reminder call can contain that a recogniser would otherwise invent.
+    """What the recogniser is told to expect: the campaign's plates, and nothing else.
 
-    Not just the plates. A weekday is as closed a set as a plate, and leaving it out is why a call can
-    lose the day after the registration was read back perfectly.
+    Adding the weekdays and opening hours as well was tried and measured, and it cost more than it
+    bought: plate recovery fell from 7 of 10 to 5 of 10, and the day it was supposed to rescue was
+    still lost. Bias capacity is scarce. Spend it on the set that is high value, closed, and known
+    before the phone rings; the day is better fixed by reading it back to the customer.
     """
-    days = [*WEEKDAYS[:5], "i morgen", "i næste uge", "formiddag", "eftermiddag"]
-    times = [f"klokken {hour}" for hour in (8, 9, 10, 13, 14)] + ["halv ni", "halv tre", "den tidligste"]
-    return ", ".join([call_list(), *days, *times])
+    return call_list()
 
 
 def weekdays_mentioned(text: str) -> list[str]:

@@ -85,19 +85,34 @@ def test_a_biased_recogniser_says_so_in_its_name_and_an_unbiased_one_does_not() 
     assert Recognizer("small", vocabulary="AB 12 345").name == "whisper:small+bias"
 
 
-def test_the_vocabulary_covers_every_closed_set_a_call_contains_not_only_the_plates() -> None:
-    """A weekday is as closed a set as a plate. Leaving it out loses the day after the plate survived."""
+def test_the_vocabulary_is_the_call_list_and_stays_that_narrow() -> None:
+    """Widening it to weekdays and opening hours was measured and cost more than it bought."""
     from punchin.scenarios import SCENARIOS, call_list, spell_plate, vocabulary
 
     assert spell_plate("AB12345") == "AB 12 345"
     listed = call_list()
     assert all(spell_plate(scenario.vehicle.reg) in listed for scenario in SCENARIOS)
     assert listed.count(",") == len(SCENARIOS) - 1
+    assert vocabulary() == listed
+    assert "onsdag" not in vocabulary()
 
-    full = vocabulary()
-    assert listed in full
-    assert all(day in full for day in ("mandag", "tirsdag", "onsdag", "torsdag", "fredag"))
-    assert "formiddag" in full and "klokken 8" in full
+
+def test_a_long_vocabulary_is_kept_out_of_the_decoder_prompt() -> None:
+    """A long initial_prompt comes back as the transcript on a short turn. Hotwords always; prompt only
+    while it is short enough that the decoder cannot plausibly continue it."""
+    from punchin.audio import PROMPT_BUDGET, Recognizer
+    from punchin.scenarios import vocabulary
+
+    assert Recognizer("small").bias() == {}
+
+    short = Recognizer("small", vocabulary=vocabulary()).bias()
+    assert len(vocabulary()) <= PROMPT_BUDGET
+    assert short["hotwords"] == vocabulary()
+    assert vocabulary() in short["initial_prompt"]
+
+    padded = Recognizer("small", vocabulary="x" * (PROMPT_BUDGET + 1)).bias()
+    assert "hotwords" in padded
+    assert "initial_prompt" not in padded
 
 
 @pytest.mark.slow
