@@ -414,9 +414,10 @@ drops one part of the goal state at a time and measures each arm several times:
   noise floor 0.09 (the widest spread any one arm showed)
 ```
 
-The repeats are not optional politeness. The simulator is sampled, and the same call with the same goal
-state has come back anywhere from 0.60 to 0.80 — so a single-run ablation produced a table showing four
-of six fields as actively harmful, which was the sampler and not the fields. Anything that cannot clear
+The repeats are not optional politeness. Measured on one call, four runs of the identical goal state
+came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting an earlier run of the same
+thing. A single-run ablation of that call produced a table showing four of six fields as actively
+harmful, with deltas of 0.03 to 0.10. Every one of them was inside the sampler. Anything that cannot clear
 the noise floor is printed as **under the noise** rather than as a number, because a delta that cannot
 beat its own sampler is not a finding and the tool should say so rather than leave a reader to do the
 arithmetic.
@@ -546,6 +547,10 @@ the customer and the agent, both lines are shown: what she said, and under it wh
 - **Soundness is checked, not established.** Three trials on one scenario, with both arms at their
   ceiling, is a check you can run rather than a guarantee anybody should quote. A case where a fix works
   only some of the time would test it properly, and engineering one on purpose is an open problem.
+- **The fidelity metric is noisier than the effects anyone wants to measure.** Repeated runs of one call
+  spread 0.13 to 0.23, while the goal-state fields are worth 0.03 to 0.10 each. `--ablate --repeat N`
+  reports this honestly instead of hiding it, but no field can be called worthless on the evidence so
+  far, and separating them would take far more repeats than the ablation runs by default.
 - **A scenario's outcome is somebody's judgement.** An imported call is graded against what a person
   said should have happened. punchin makes that explicit rather than inferring it, which means a wrong
   judgement produces a confidently wrong grade.
