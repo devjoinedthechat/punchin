@@ -287,6 +287,13 @@ punchin check  .punchin/ci/*.json                       # every build after that
 
 Correctness, the day, the plate and the workshop note must not go from true to false. The number of
 times read out in one breath, the agent repeating itself and the customer stalling must not go up.
+
+A word on those last three. They are **hand-written proxies**, not validated measures: nobody has
+checked them against a human rating of the same calls, and this README says elsewhere that
+LLM-as-judge is mostly theatre, so it owes you the same scepticism about its own heuristics. Each one
+names something a person would recognise on a phone call, and each is cheap, deterministic and wrong in
+ways you can read off the source — which a judge is not. Use them for *movement*: the same proxy,
+before and after a change, on the same call. Do not use them as a score.
 Turns and lookups have a little slack, because a call is allowed to wander. A metric missing from
 either side is never a regression, so a text run can be checked against a text baseline without the
 audio columns inventing failures.

@@ -1,7 +1,20 @@
 """What a recorded call did, and what it felt like, as numbers.
 
-Outcome is against the scenario's ground truth. Feel is from the transcript and timing; in text mode the
-timing is the model's latency only, so it is reported as that and not as anything a caller heard.
+Outcome is against the scenario's ground truth: it is right or wrong, and the corpus says which.
+
+Feel is not. `options_max`, `agent_repeats`, `customer_stalls` and the rest are **hand-written
+proxies**, chosen because each one names something a person would recognise on a phone call — five
+times read out in one breath, the same sentence four times, a customer who stopped understanding the
+question. None of them has been calibrated against a human rating, and this file does not pretend
+otherwise. What they are good for is *movement*: the same proxy, measured before and after a change,
+on the same call. What they are not good for is a score, a league table, or an argument that one agent
+is nicer than another.
+
+The reason to prefer them to a model's opinion is not that they are better judges. It is that they are
+cheap, deterministic, and wrong in ways you can read off the source, which a judge is not.
+
+In text mode the timing is the model's latency only, so it is reported as that and never as a gap a
+caller experienced.
 """
 
 from __future__ import annotations
