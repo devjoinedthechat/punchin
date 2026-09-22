@@ -20,10 +20,11 @@ Pre-alpha. What exists today, 2026-09-22:
 | ✅ | A small dealership system with three tools (`lookup_vehicle`, `find_slots`, `book`), callable in-process and as an MCP server over stdio. |
 | ✅ | Two scripted agents: `careful` reaches the expected outcome on every scenario; `careless` makes the mistake each scenario is built to catch. Every grader has to tell them apart before a model is run. |
 | ✅ | Recording with a model as the agent, through Claude Code in print mode, so no API key is needed. Tool calls are read back exactly as the model made them. |
-| ⬜ | Goal-state extraction from a recorded call. |
-| ⬜ | The pinned customer, and its teacher-forced fidelity against the real turns. |
+| ✅ | Goal-state extraction from a recorded call, scored against the scenario's truth. |
+| ✅ | The pinned customer, and its teacher-forced fidelity against the real customer's held-out turns. |
 | ⬜ | `punchin fork`: prefix from the recording, the changed agent from turn *k*, `--repeat`. |
-| ⬜ | Timing and outcome metrics; audio. |
+| ✅ | Outcome and feel metrics per call. |
+| ⬜ | Audio: a spoken customer, a real ASR, and timing a caller would hear. |
 
 ## Try it
 
@@ -33,6 +34,10 @@ uv run punchin scenarios
 uv run punchin record --agent careful                     # all ten, free, deterministic
 uv run punchin record --agent careless --scenario self-correction
 uv run punchin record --agent claude-code --scenario self-correction   # a real model, via Claude Code
+
+uv run punchin metrics .punchin/calls/*.json
+uv run punchin extract  .punchin/calls/<call>.json --model claude-haiku-4-5
+uv run punchin fidelity .punchin/calls/<call>.json --goal truth --model claude-haiku-4-5
 ```
 
 Recordings land in `.punchin/calls/` as JSON: every turn, every tool call, and what ended up booked.

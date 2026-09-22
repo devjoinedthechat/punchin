@@ -50,6 +50,7 @@ class GoalState(BaseModel):
     extras: list[str] = []  # things the workshop should know: a noise, a courtesy car
     formality: Formality = "informal"
     mood: str = "neutral"
+    reveals: list[str] = []  # the facts in the order the customer brought them up, when extracted from a call
 
 
 @dataclass(frozen=True)

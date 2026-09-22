@@ -11,9 +11,12 @@ from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
 from punchin.customer import ScriptedCustomer
 from punchin.dms import TODAY, serve
-from punchin.model import ClaudeCodeModel
+from punchin.fidelity import teacher_forced
+from punchin.goal import extract, score
+from punchin.metrics import summarize
+from punchin.model import ClaudeCodeModel, Model
 from punchin.record import record
-from punchin.scenarios import BY_ID, SCENARIOS
+from punchin.scenarios import BY_ID, SCENARIOS, GoalState
 
 DEFAULT_OUT = Path(".punchin/calls")
 
@@ -73,6 +76,58 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def model_for(args: argparse.Namespace) -> Model:
+    return ClaudeCodeModel(model=args.model)
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    model = model_for(args)
+    for path in args.call:
+        call = Call.load(Path(path))
+        goal, cost = extract(call, model, TODAY)
+        print(f"{call.id}  ${cost:.3f}")
+        print(f"  {goal.model_dump_json(exclude_defaults=False)}")
+        if call.scenario in BY_ID:
+            print(f"  vs truth: {score(goal, BY_ID[call.scenario].goal)}")
+    return 0
+
+
+def cmd_fidelity(args: argparse.Namespace) -> int:
+    model = model_for(args)
+    for path in args.call:
+        call = Call.load(Path(path))
+        goal: GoalState
+        if args.goal == "truth":
+            goal = BY_ID[call.scenario].goal
+        else:
+            goal, _ = extract(call, model, TODAY)
+        print(teacher_forced(call, goal, model).text())
+        print()
+    return 0
+
+
+def cmd_metrics(args: argparse.Namespace) -> int:
+    rows = [summarize(Call.load(Path(p)), BY_ID[Call.load(Path(p)).scenario]) for p in args.call]
+    keys = [
+        "scenario",
+        "agent",
+        "correct",
+        "day_ok",
+        "note_ok",
+        "turns",
+        "agent_words_max",
+        "options_max",
+        "customer_stalls",
+        "ended_by",
+        "model_ms_mean",
+        "cost_usd",
+    ]
+    print("  ".join(f"{k:>15}" for k in keys))
+    for row in rows:
+        print("  ".join(f"{str(row.get(k, ''))[:15]:>15}" for k in keys))
+    return 0
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     serve(Path(args.state))
     return 0
@@ -95,6 +150,21 @@ def parser() -> argparse.ArgumentParser:
     sh = commands.add_parser("show", help="print a recorded call")
     sh.add_argument("call", nargs="+")
     sh.set_defaults(run=cmd_show)
+
+    for name, run, help_text in (
+        ("extract", cmd_extract, "read the customer's goal state out of recorded calls"),
+        ("fidelity", cmd_fidelity, "teacher-forced: does the pinned customer say what the real one said?"),
+    ):
+        sub = commands.add_parser(name, help=help_text)
+        sub.add_argument("call", nargs="+")
+        sub.add_argument("--model", default="claude-sonnet-5")
+        if name == "fidelity":
+            sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+        sub.set_defaults(run=run)
+
+    met = commands.add_parser("metrics", help="outcome and feel numbers for recorded calls")
+    met.add_argument("call", nargs="+")
+    met.set_defaults(run=cmd_metrics)
 
     dms = commands.add_parser("dms", help="the DMS as an MCP server over stdio (what the model calls)")
     dms.add_argument("--state", required=True)
