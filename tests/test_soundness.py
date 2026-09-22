@@ -113,3 +113,56 @@ def test_the_interval_stays_honest_at_a_handful_of_trials(
     got_low, got_high = wilson(passed, total)
     assert got_low == pytest.approx(low, abs=0.02)
     assert got_high == pytest.approx(high, abs=0.02)
+
+
+def test_a_sweep_says_whether_a_gap_is_the_tool_or_one_scenario(tmp_path: Path) -> None:
+    """One scenario cannot tell you much. A gap on most of them is the tool; on one it is that one."""
+    from punchin.soundness import summarise_soundness
+
+    found = [_measure(tmp_path), _measure(tmp_path)]
+    printed = summarise_soundness(found)
+    assert "2 scenarios" in printed
+    assert "the fork mechanism moved the answer by" in printed
+    assert "the pinned customer moved it by" in printed
+    assert "agreed on every scenario" in printed
+
+
+def test_a_sweep_names_the_scenarios_that_disagreed() -> None:
+    from punchin.soundness import Arm, Soundness, summarise_soundness
+
+    def rigged(passes_live: int, passes_fork: int) -> Soundness:
+        live, scripted, pinned = (Arm(n, SCENARIO) for n in ("a", "b", "c"))
+        live.calls = [_fake(True)] * passes_live + [_fake(False)] * (2 - passes_live)
+        scripted.calls = [_fake(True)] * passes_live + [_fake(False)] * (2 - passes_live)
+        pinned.calls = [_fake(True)] * passes_fork + [_fake(False)] * (2 - passes_fork)
+        return Soundness(SCENARIO, 4, "x", _fake(False), live, scripted, pinned)
+
+    optimistic = rigged(passes_live=1, passes_fork=2)
+    assert optimistic.simulator_gap > 0
+    assert SCENARIO.id in summarise_soundness([optimistic])
+
+
+def _fake(correct: bool):
+    """A call whose booking makes `outcome` say correct or not."""
+    import datetime as when
+
+    from punchin.call import Call
+
+    call = Call(id="x", scenario=SCENARIO.id, agent="a", customer="c", started_at=when.datetime.now(when.UTC))
+    if correct:
+        call.bookings = [
+            {
+                "reg": SCENARIO.expected.reg,
+                "date": SCENARIO.expected.day.isoformat(),
+                "time": "08:00",
+                "note": "",
+            }
+        ]
+    return call
+
+
+def test_a_run_where_every_arm_sat_at_its_ceiling_says_so(tmp_path: Path) -> None:
+    """Agreement with no chance of disagreement is not evidence, and the report admits it."""
+    from punchin.soundness import summarise_soundness
+
+    assert "ceiling" in summarise_soundness([_measure(tmp_path)])

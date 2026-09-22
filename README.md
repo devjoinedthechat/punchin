@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-147-brightgreen" alt="147 tests">
+  <img src="https://img.shields.io/badge/tests-175-brightgreen" alt="175 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -395,20 +395,36 @@ randomness never enters, because the agent's lines are always the recorded ones.
 ```
 $ punchin fidelity .punchin/calls/*.json --goal truth --summary
 
-  …is-it-a-robot     jaccard 0.83  exact 83%  length x1.94  over 6 turns
-  …plain-booking     jaccard 0.83  exact 60%  length x2.13  over 5 turns
-  …self-correction   jaccard 0.63  exact 20%  length x1.53  over 5 turns
-  …already-booked    jaccard 0.00  exact  0%  length x1.37  over 2 turns
+  …is-it-a-robot     jaccard 0.87  exact 67%  length x1.94  helps +0.17  over 6 turns
+  …plain-booking     jaccard 0.83  exact 60%  length x2.13  helps +0.20  over 5 turns
+  …self-correction   jaccard 0.63  exact 20%  length x1.53  helps +0.00  over 5 turns
+  …already-booked    jaccard 0.50  exact 50%  length x1.37  helps +0.00  over 2 turns
 
 10 calls, 47 customer turns
-  per turn (pooled): jaccard 0.69, exact 57%
-  per call:          mean 0.65, median 0.68, range 0.00-0.93
+  per turn (pooled): jaccard 0.69, exact 51%, volunteers +0.09 facts a turn beyond the real customer
+  per call:          mean 0.67, median 0.70, range 0.50-0.87
 ```
+
+### Is she as difficult as the real one was?
+
+Overlap cannot answer that, and it is the question the whole tool rests on. A simulated customer can
+match every fact the real one gave **and still hand over three more** — and an agent talking to a more
+forthcoming customer has an easier job than the agent on the real call did, which is exactly how a fix
+comes to look better than it is.
+
+So the *volunteers* figure is separate: per turn, the facts the customer offered that the agent had not
+asked for, measured against what the real customer offered in the same place. Zero means she is as
+forthcoming as the woman on the recording. Above zero means forks are running against someone easier.
+
+Here it is **+0.09** — roughly one extra fact every eleven turns. Small, and in the same direction the
+[soundness check](#does-a-fork-tell-the-truth) found nothing in: a simulator that over-helps a little,
+and forks that agreed with full re-runs anyway. Two measurements that could have disagreed, pointing the
+same way.
 
 **Read the pooled line.** Averaging the calls' averages gives a two-turn call the same weight as a
 ten-turn one, and a two-turn call's score moves in steps of 0.50 — it is close to a coin flip on whether
-one keyword fired. `already-booked` reading 0.00 is that, not a simulator that cannot say no: its first
-turn, the actual refusal, matches well.
+one keyword fired. `already-booked` swinging between 0.00 and 0.50 across runs is that, not a simulator
+that cannot say no: its first turn, the actual refusal, matches well every time.
 
 The other thing only the spread shows is that **the simulator is two to four times more verbose than the
 customer it is playing**, on every call. Some of that is this corpus: its customers answer in one or two
