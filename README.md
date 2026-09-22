@@ -395,10 +395,9 @@ randomness never enters, because the agent's lines are always the recorded ones.
 ```
 $ punchin fidelity .punchin/calls/*.json --goal truth --summary
 
-  …is-it-a-robot     jaccard 0.87  exact 67%  length x1.94  helps +0.17  over 6 turns
-  …plain-booking     jaccard 0.83  exact 60%  length x2.13  helps +0.20  over 5 turns
-  …self-correction   jaccard 0.63  exact 20%  length x1.53  helps +0.00  over 5 turns
-  …already-booked    jaccard 0.50  exact 50%  length x1.37  helps +0.00  over 2 turns
+  …self-correction   jaccard 0.87  exact 80%  length x1.51  helps +0.40  over 5 turns
+  …wrong-reg-first   jaccard 0.70  exact 40%  length x3.88  helps +0.00  over 5 turns
+  …                                                         (eight more)
 
 10 calls, 47 customer turns
   per turn (pooled): jaccard 0.69, exact 51%, volunteers +0.09 facts a turn beyond the real customer
