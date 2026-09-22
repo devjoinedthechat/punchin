@@ -19,8 +19,10 @@ a bug in the tool, the other is a limit of simulation, and they need different f
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 from punchin.agent import Agent
@@ -205,3 +207,37 @@ def measure(
             budget.spend(live.calls[-1].cost_usd + fork_scripted.cost_usd + fork_pinned.cost_usd)
 
     return Soundness(scenario, at, change, baseline, live, fork_scripted, fork_pinned)
+
+
+def summarise_soundness(results: Sequence[Soundness]) -> str:
+    """Several scenarios at once. The point of a sweep is that one scenario cannot tell you much.
+
+    A gap that appears on one scenario and nowhere else is that scenario. A gap that appears on most of
+    them is the tool, and it is the second kind this is looking for.
+    """
+    if not results:
+        return "nothing measured"
+    trials = sum(len(found.live.calls) for found in results)
+    mechanism = [found.mechanism_gap for found in results]
+    simulator = [found.simulator_gap for found in results]
+    ceilinged = [f for f in results if f.live.rate in (0.0, 1.0) and f.fork_pinned.rate == f.live.rate]
+
+    lines = [
+        f"{len(results)} scenarios, {trials} live runs and {trials * 2} forks",
+        f"  the fork mechanism moved the answer by {mean(mechanism):+.0%} on average "
+        f"(worst {max(mechanism, key=abs):+.0%})",
+        f"  the pinned customer moved it by       {mean(simulator):+.0%} on average "
+        f"(worst {max(simulator, key=abs):+.0%})",
+    ]
+    disagreed = [f.scenario.id for f in results if abs(f.total_gap) > 1e-9]
+    lines.append(
+        "  forks and live runs agreed on every scenario"
+        if not disagreed
+        else f"  they disagreed on: {', '.join(disagreed)}"
+    )
+    if len(ceilinged) == len(results):
+        lines.append(
+            "  every scenario sat at its ceiling, so this run agreed without much chance to do "
+            "otherwise. Try a weaker model, where the fix lands inconsistently."
+        )
+    return "\n".join(lines)

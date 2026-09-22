@@ -40,7 +40,7 @@ from punchin.scenarios import (
     ungraded,
     vocabulary,
 )
-from punchin.soundness import measure
+from punchin.soundness import measure, summarise_soundness
 from punchin.triage import triage
 
 DEFAULT_OUT = Path(".punchin/calls")
@@ -330,8 +330,11 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
 def cmd_soundness(args: argparse.Namespace) -> int:
     known = known_scenarios(args)
-    scenario = known.get(args.scenario)
-    if scenario is None:
+    if args.scenario == "all":
+        chosen = [s for s in SCENARIOS if s.script]
+    elif args.scenario in known:
+        chosen = [known[args.scenario]]
+    else:
         raise SystemExit(ungraded(args.scenario, Path(args.scenarios)))
     if not args.system_suffix:
         raise SystemExit("--system-suffix is the change whose fork is being checked; it is required")
@@ -341,24 +344,33 @@ def cmd_soundness(args: argparse.Namespace) -> int:
     plain = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.baseline_suffix)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    found = measure(
-        scenario,
-        agent_with_change=changed,
-        agent_without=plain,
-        goal=scenario.goal,
-        model=model,
-        state_path=out / ".dms-state.json",
-        at=args.at,
-        trials=args.trials,
-        change=args.system_suffix,
-        budget=Budget(args.max_usd),
-        out=out,
-    )
+    budget = Budget(args.max_usd)
+
+    results = []
+    for scenario in chosen:
+        found = measure(
+            scenario,
+            agent_with_change=changed,
+            agent_without=plain,
+            goal=scenario.goal,
+            model=model,
+            state_path=out / ".dms-state.json",
+            at=args.at,
+            trials=args.trials,
+            change=args.system_suffix,
+            budget=budget,
+            out=out,
+        )
+        results.append(found)
+        if not args.json:
+            print(found.text())
+            print()
     (out / ".dms-state.json").unlink(missing_ok=True)
+
     if args.json:
-        print(json.dumps(found.as_dict(), ensure_ascii=False, sort_keys=True))
-    else:
-        print(found.text())
+        print(json.dumps([f.as_dict() for f in results], ensure_ascii=False, sort_keys=True))
+    elif len(results) > 1:
+        print(summarise_soundness(results))
     return 0
 
 
@@ -526,12 +538,16 @@ def _add_judging(commands: Commands, common: argparse.ArgumentParser) -> None:
     snd = commands.add_parser(
         "soundness", parents=[common], help="check that forking says what a full re-run says"
     )
-    snd.add_argument("--scenario", required=True)
+    snd.add_argument("--scenario", required=True, help="a scenario id, or 'all'")
     snd.add_argument("--system-suffix", required=True, help="the change whose fork is being checked")
     snd.add_argument("--baseline-suffix", default="", help="the prompt the recording was made with")
     snd.add_argument("--at", type=int, default=None, help="fork point; the middle of the call by default")
     snd.add_argument("--trials", type=int, default=3)
-    snd.add_argument("--model", default="claude-sonnet-5")
+    snd.add_argument(
+        "--model",
+        default="claude-sonnet-5",
+        help="a weaker model makes the fix land inconsistently, which is what discriminates",
+    )
     snd.add_argument("--max-usd", type=float, default=5.0)
     snd.add_argument("--json", action="store_true")
     snd.add_argument("--out", default=str(DEFAULT_OUT.parent / "soundness"))
