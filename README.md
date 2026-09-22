@@ -184,7 +184,8 @@ punchin record --agent command --agent-command "python my_agent.py"
 
 ```jsonc
 // in
-{"protocol":1,"today":"2026-09-28","lead":{…},"tools":{"mcp":{…}},
+{"protocol":1,"today":"2026-09-28","today_spoken":"mandag den 28. september",
+   "lead":{…},"tools":{"mcp":{…},"state_path":"…"},
    "conversation":[{"speaker":"customer","text":"Det er AB 12 345."}]}
 // out
 {"text":"Må jeg få nummerpladen på bilen?"}
@@ -704,8 +705,8 @@ uncertainty.
 
 **Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True` over a
 phone line, because the right outcome there is no booking and the call collapsed before making one. The
-feel columns are the only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`,
-`ended_by=customer`. The inverse of the headline call, where the feel columns were clean and the outcome
+feel columns are the only thing that disagrees: `agent_repeats=4`, `customer_stalls=3`,
+`ended_by=customer` — the same run the [triage](#which-call-to-fork) above reads. The inverse of the headline call, where the feel columns were clean and the outcome
 was wrong. Neither kind of check finds both, which is why punchin keeps ground truth as well.
 
 ## Hearing it
