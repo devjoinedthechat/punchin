@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-142-brightgreen" alt="142 tests">
+  <img src="https://img.shields.io/badge/tests-144-brightgreen" alt="144 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -405,24 +405,34 @@ the simulator: run it before and after, on the same recordings.
 punchin fidelity <call> --goal truth --ablate --repeat 3
 ```
 
-drops one part of the goal state at a time and measures each arm several times:
+drops one part of the goal state at a time, measures each arm several times, and compares them turn by
+turn rather than on their averages:
 
 ```
-  everything            jaccard 0.71  spread 0.09  (0.66 0.75 0.71)
-  without mood          jaccard 0.68  spread 0.07  (0.71 0.64 0.68)   worth under the noise
-  without manner        jaccard 0.61  spread 0.06  (0.58 0.64 0.61)   worth +0.10
-  noise floor 0.09 (the widest spread any one arm showed)
+  everything           jaccard 0.74  spread 0.11  (0.70 0.81 0.72)
+
+  field                 paired   ± s.e.  turns   verdict
+  manner                +0.104    0.031     15   carries its weight
+  reveals               +0.018    0.040     15   not distinguishable from zero
+  mood                  -0.007    0.036     15   not distinguishable from zero
+
+  Paired by turn, so turn difficulty cancels.
 ```
 
-The repeats are not optional politeness. Measured on one call, four runs of the identical goal state
-came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting an earlier run of the same
-thing. A single-run ablation of that call produced a table showing four of six fields as actively
-harmful, with deltas of 0.03 to 0.10. Every one of them was inside the sampler. Anything that cannot clear
-the noise floor is printed as **under the noise** rather than as a number, because a delta that cannot
-beat its own sampler is not a finding and the tool should say so rather than leave a reader to do the
-arithmetic.
+The repeats are not optional politeness, and neither is the pairing. Four runs of one call with the
+identical goal state came back **0.80, 0.70, 0.83, 0.70** — a spread of 0.13, and 0.23 counting a fifth.
+The fields are worth 0.03 to 0.10 each. Comparing the arms' averages therefore cannot see them at all: a
+single-run ablation of that call produced a confident-looking table showing four of six fields as
+actively harmful, every delta of which was inside the sampler.
 
-A field that stays under the noise across repeats is one the simulator was never using, and it should
+Pairing fixes that properly rather than by brute force. Most of the variance is turn difficulty — a turn
+where the customer says *"Ja."* scores differently from one where she corrects herself, whatever the
+goal state says — and that difficulty is **identical on both sides of the comparison**. Taking the
+difference turn by turn cancels it, so a field worth 0.10 becomes visible through 0.13 of run-to-run
+spread instead of drowning in it.
+
+A field whose paired difference sits inside two standard errors of zero is reported as *not
+distinguishable from zero*. One that stays there is a field the simulator was never using, and it should
 come out of the schema rather than sit there looking principled.
 
 The same run also grades the extraction that produced the goal state, against the corpus truth: on the
