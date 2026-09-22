@@ -22,6 +22,17 @@ from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario, vocabulary
 DEFAULT_OUT = Path(".punchin/calls")
 
 
+def add_audio_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--audio", action="store_true", help="speak the customer aloud and hear it back")
+    parser.add_argument("--studio", action="store_true", help="skip the phone band; a clean microphone")
+    parser.add_argument("--whisper", default="small", help="recogniser size: base loses Danish plates")
+    parser.add_argument(
+        "--bias",
+        action="store_true",
+        help="tell the recogniser the call list, the way a production agent would",
+    )
+
+
 def agent_for(name: str, model: str) -> Agent:
     if name == "careful":
         return ScriptedAgent(careful=True)
@@ -60,22 +71,26 @@ def cmd_scenarios(_: argparse.Namespace) -> int:
     return 0
 
 
-def customer_for(args: argparse.Namespace, scenario: Scenario, out: Path) -> Customer:
-    spoken = ScriptedCustomer(scenario)
-    if not args.audio:
-        return spoken
+def voice(args: argparse.Namespace, inner: Customer, out: Path) -> Customer:
+    """`inner`, spoken aloud and heard back, when --audio is on. Shared by `record` and `fork`."""
+    if not getattr(args, "audio", False):
+        return inner
     from punchin.audio import AudioCustomer, available, recognizer  # noqa: PLC0415 - optional extra
 
     ready, missing = available()
     if not ready:
         raise SystemExit(f"--audio needs: {missing}")
     return AudioCustomer(
-        spoken,
+        inner,
         recognizer(args.whisper, vocabulary=vocabulary() if args.bias else None),
         out / "audio",
         over_the_phone=not args.studio,
-        snr_db=args.snr_db,
+        snr_db=getattr(args, "snr_db", None),
     )
+
+
+def customer_for(args: argparse.Namespace, scenario: Scenario, out: Path) -> Customer:
+    return voice(args, ScriptedCustomer(scenario), out)
 
 
 def cmd_record(args: argparse.Namespace) -> int:
@@ -175,6 +190,7 @@ def cmd_fork(args: argparse.Namespace) -> int:
         changed=changed,
         budget=Budget(args.max_usd),
         out=out,
+        wrap=lambda inner: voice(args, inner, out),
     )
     (out / ".dms-state.json").unlink(missing_ok=True)
     print(report.text())
@@ -198,15 +214,8 @@ def parser() -> argparse.ArgumentParser:
     rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
     rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
     rec.add_argument("--out", default=str(DEFAULT_OUT))
-    rec.add_argument("--audio", action="store_true", help="speak the customer aloud and hear it back")
-    rec.add_argument("--studio", action="store_true", help="skip the phone band; a clean microphone")
+    add_audio_flags(rec)
     rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
-    rec.add_argument("--whisper", default="small", help="recogniser size: base loses Danish plates")
-    rec.add_argument(
-        "--bias",
-        action="store_true",
-        help="tell the recogniser the call list, the way a production agent would",
-    )
     rec.set_defaults(run=cmd_record)
 
     sh = commands.add_parser("show", help="print a recorded call")
@@ -233,6 +242,7 @@ def parser() -> argparse.ArgumentParser:
     fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
     fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
     fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
+    add_audio_flags(fk)
     fk.set_defaults(run=cmd_fork)
 
     met = commands.add_parser("metrics", help="outcome and feel numbers for recorded calls")

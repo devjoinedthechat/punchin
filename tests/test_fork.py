@@ -7,7 +7,7 @@ import pytest
 
 from punchin.agent import ScriptedAgent
 from punchin.call import Call
-from punchin.customer import ScriptedCustomer
+from punchin.customer import CustomerTurn, ScriptedCustomer
 from punchin.dms import Dms, fresh
 from punchin.fork import Budget, agent_turns, fork, fork_once, replay_prefix
 from punchin.model import ClaudeCodeModel
@@ -134,6 +134,43 @@ def test_repeat_runs_several_attempts_and_the_budget_stops_them(recorded: Call, 
     )
     assert len(broke.attempts) == 1  # the first attempt spends past a one-tenth-of-a-cent budget
     assert broke.stopped is not None and "budget" in broke.stopped
+
+
+def test_a_fork_can_put_a_recogniser_between_the_customer_and_the_agent(
+    recorded: Call, tmp_path: Path
+) -> None:
+    """Forking a spoken call must not quietly remove the thing that broke it."""
+    heard: list[str] = []
+
+    class Deafening:
+        """Stands in for a bad line: everything the customer says arrives as noise."""
+
+        def __init__(self, inner: object) -> None:
+            self.inner = inner
+            self.name = "deafening"
+
+        def respond(self, call: Call) -> CustomerTurn | None:
+            said = self.inner.respond(call)  # type: ignore[attr-defined]
+            if said is None:
+                return None
+            heard.append(said.text)
+            return CustomerTurn(said.text, heard="øh hvad")
+
+    forked = fork_once(
+        recorded,
+        SCENARIO,
+        6,
+        agent=ScriptedAgent(careful=True),
+        goal=SCENARIO.goal,
+        model=_model(),
+        state_path=tmp_path / "f.json",
+        wrap=Deafening,
+    )
+    assert heard, "the wrapper never saw the customer"
+    live = [t for t in forked.turns[6:] if t.speaker == "customer"]
+    assert all(t.heard == "øh hvad" for t in live)
+    assert all(t.spoken != "øh hvad" for t in live)  # what was said is still the answer key
+    assert not forked.bookings  # nothing arrives, so nothing is booked
 
 
 def test_a_fork_with_the_careless_agent_books_the_day_the_customer_took_back(
