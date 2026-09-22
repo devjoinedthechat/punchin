@@ -17,7 +17,7 @@ from punchin.goal import extract, score
 from punchin.metrics import summarize
 from punchin.model import ClaudeCodeModel, Model
 from punchin.record import record
-from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario
+from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario, vocabulary
 
 DEFAULT_OUT = Path(".punchin/calls")
 
@@ -71,7 +71,7 @@ def customer_for(args: argparse.Namespace, scenario: Scenario, out: Path) -> Cus
         raise SystemExit(f"--audio needs: {missing}")
     return AudioCustomer(
         spoken,
-        recognizer(args.whisper),
+        recognizer(args.whisper, vocabulary=vocabulary() if args.bias else None),
         out / "audio",
         over_the_phone=not args.studio,
         snr_db=args.snr_db,
@@ -202,6 +202,11 @@ def parser() -> argparse.ArgumentParser:
     rec.add_argument("--studio", action="store_true", help="skip the phone band; a clean microphone")
     rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
     rec.add_argument("--whisper", default="small", help="recogniser size: base loses Danish plates")
+    rec.add_argument(
+        "--bias",
+        action="store_true",
+        help="tell the recogniser the call list, the way a production agent would",
+    )
     rec.set_defaults(run=cmd_record)
 
     sh = commands.add_parser("show", help="print a recorded call")

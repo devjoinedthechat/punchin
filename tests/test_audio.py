@@ -78,6 +78,39 @@ def test_the_danish_voice_and_the_recogniser_agree_on_a_plain_sentence(tmp_path:
     assert "onsdag" in heard.lower()
 
 
+def test_a_biased_recogniser_says_so_in_its_name_and_an_unbiased_one_does_not() -> None:
+    from punchin.audio import Recognizer
+
+    assert Recognizer("small").name == "whisper:small"
+    assert Recognizer("small", vocabulary="AB 12 345").name == "whisper:small+bias"
+
+
+def test_the_vocabulary_covers_every_closed_set_a_call_contains_not_only_the_plates() -> None:
+    """A weekday is as closed a set as a plate. Leaving it out loses the day after the plate survived."""
+    from punchin.scenarios import SCENARIOS, call_list, spell_plate, vocabulary
+
+    assert spell_plate("AB12345") == "AB 12 345"
+    listed = call_list()
+    assert all(spell_plate(scenario.vehicle.reg) in listed for scenario in SCENARIOS)
+    assert listed.count(",") == len(SCENARIOS) - 1
+
+    full = vocabulary()
+    assert listed in full
+    assert all(day in full for day in ("mandag", "tirsdag", "onsdag", "torsdag", "fredag"))
+    assert "formiddag" in full and "klokken 8" in full
+
+
+@pytest.mark.slow
+def test_the_call_list_recovers_a_plate_the_phone_line_destroyed(tmp_path: Path) -> None:
+    """Naive decoding loses this plate; telling the recogniser the call list gets it back."""
+    from punchin.audio import Recognizer, speak, telephone
+    from punchin.scenarios import call_list
+
+    wav = telephone(speak("Det er CD 67 890.", tmp_path / "p.wav"), tmp_path / "p-phone.wav")
+    assert "CD67890" not in regs_mentioned(Recognizer("small").hear(wav))
+    assert "CD67890" in regs_mentioned(Recognizer("small", vocabulary=call_list()).hear(wav))
+
+
 def test_the_scripted_customer_still_answers_when_nothing_is_spoken() -> None:
     answer = ScriptedCustomer(SCENARIO).respond(
         Call(id="c", scenario="s", agent="a", customer="c", started_at=_when())

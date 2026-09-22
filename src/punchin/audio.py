@@ -105,12 +105,21 @@ def duration_ms(path: Path) -> int:
 
 
 class Recognizer:
-    """faster-whisper, loaded once and kept."""
+    """faster-whisper, loaded once and kept.
 
-    def __init__(self, size: str = DEFAULT_MODEL, *, language: str = "da") -> None:
+    `vocabulary` is what a production voice agent always has and a naive one never uses: the entities
+    this call could plausibly contain. For an outbound campaign that is the call list, known before the
+    phone rings. It is passed to the decoder as hotwords and as a prompt, and it is the difference
+    between reading a plate and inventing one.
+    """
+
+    def __init__(
+        self, size: str = DEFAULT_MODEL, *, language: str = "da", vocabulary: str | None = None
+    ) -> None:
         self.size = size
         self.language = language
-        self.name = f"whisper:{size}"
+        self.vocabulary = vocabulary
+        self.name = f"whisper:{size}" + ("+bias" if vocabulary else "")
         self._model: WhisperModel | None = None
 
     @property
@@ -122,14 +131,18 @@ class Recognizer:
         return self._model
 
     def hear(self, path: Path) -> str:
-        segments, _ = self.model.transcribe(str(path), language=self.language, beam_size=5)
+        bias: dict[str, str] = {}
+        if self.vocabulary:
+            bias["hotwords"] = self.vocabulary
+            bias["initial_prompt"] = f"En samtale om en tid til syn. Forventede ord: {self.vocabulary}."
+        segments, _ = self.model.transcribe(str(path), language=self.language, beam_size=5, **bias)
         return " ".join(str(segment.text).strip() for segment in segments).strip()
 
 
 @cache
-def recognizer(size: str = DEFAULT_MODEL, language: str = "da") -> Recognizer:
-    """One recogniser per size, so a run over the corpus loads the model once rather than per call."""
-    return Recognizer(size, language=language)
+def recognizer(size: str = DEFAULT_MODEL, language: str = "da", vocabulary: str | None = None) -> Recognizer:
+    """One recogniser per configuration, so a run over the corpus loads the model once, not per call."""
+    return Recognizer(size, language=language, vocabulary=vocabulary)
 
 
 class AudioCustomer:

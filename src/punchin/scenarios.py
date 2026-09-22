@@ -297,6 +297,27 @@ SCENARIOS: list[Scenario] = [
 BY_ID: dict[str, Scenario] = {s.id: s for s in SCENARIOS}
 
 
+def spell_plate(reg: str) -> str:
+    """A plate the way it is said: 'AB12345' -> 'AB 12 345'."""
+    return f"{reg[:2]} {reg[2:4]} {reg[4:]}"
+
+
+def call_list() -> str:
+    """The plates of every vehicle in the corpus, as an outbound campaign would already know them."""
+    return ", ".join(spell_plate(s.vehicle.reg) for s in SCENARIOS)
+
+
+def vocabulary() -> str:
+    """Everything a syn-reminder call can contain that a recogniser would otherwise invent.
+
+    Not just the plates. A weekday is as closed a set as a plate, and leaving it out is why a call can
+    lose the day after the registration was read back perfectly.
+    """
+    days = [*WEEKDAYS[:5], "i morgen", "i næste uge", "formiddag", "eftermiddag"]
+    times = [f"klokken {hour}" for hour in (8, 9, 10, 13, 14)] + ["halv ni", "halv tre", "den tidligste"]
+    return ", ".join([call_list(), *days, *times])
+
+
 def weekdays_mentioned(text: str) -> list[str]:
     """Weekday names in the order they were said, so a policy can take the first or the last."""
     return re.findall(r"\b(mandag|tirsdag|onsdag|torsdag|fredag)\b", text.lower())
