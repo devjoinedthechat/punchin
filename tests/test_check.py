@@ -37,6 +37,14 @@ def test_the_careless_agent_regresses_against_the_careful_baseline(tmp_path: Pat
     assert ("next-week", "day_ok") in broke  # booked this week, not next
     assert ("courtesy-car", "note_ok") in broke  # dropped the courtesy car
     assert ("wrong-reg-first", "agent_repeats") in broke  # looped on the wrong plate
+    assert ("code-switch", "note_ok") in broke  # lost the extra job in the code-switched line
+    assert ("already-booked", "agent_repeats") in broke  # kept pressing a customer who said no
+
+    # The other four it gets right, and the README says so. A scenario only catches a mistake
+    # somebody built for it, and a corpus that failed everything would be measuring the agent's
+    # name rather than its behaviour.
+    untouched = {scenario for scenario, _ in broke}
+    assert untouched.isdisjoint({"plain-booking", "hurried", "is-it-a-robot", "proxy-caller"})
 
 
 def test_an_outcome_is_a_rate_so_getting_worse_more_often_is_a_regression() -> None:
@@ -89,7 +97,10 @@ def test_a_scenario_that_disagrees_with_itself_is_flaky_not_failing() -> None:
 
     checked = check(rows, {"scenarios": {}})
     assert not checked.failed  # flaky is reported, not failed on, without a baseline to fall short of
-    assert "disagreed with themselves" in checked.text()
+    assert "1 scenario disagreed with itself" in checked.text()
+
+    rows.append({"scenario": "b", "correct": False})  # now two of them do
+    assert "2 scenarios disagreed with themselves" in check(rows, {"scenarios": {}}).text()
 
 
 def test_a_single_run_is_never_called_flaky() -> None:

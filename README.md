@@ -184,7 +184,8 @@ punchin record --agent command --agent-command "python my_agent.py"
 
 ```jsonc
 // in
-{"protocol":1,"today":"2026-09-28","lead":{…},"tools":{"mcp":{…}},"conversation":[{"speaker","text"}]}
+{"protocol":1,"today":"2026-09-28","lead":{…},"tools":{"mcp":{…}},
+   "conversation":[{"speaker":"customer","text":"Det er AB 12 345."}]}
 // out
 {"text":"Må jeg få nummerpladen på bilen?"}
 ```
@@ -363,10 +364,10 @@ scenario came out right, not whether it did once, and a regression is a rate tha
 ```
 14 regressions across 30 runs of 10 scenarios
   already-booked     agent_repeats: 1 -> 5 (it varies by 0 on its own)
+  already-booked     customer_stalls: 0 -> 3 (it varies by 0 on its own)
   already-booked     turns: 4 -> 11 (it varies by 0 on its own)
   code-switch        note_ok: 100% -> 0% of runs
-  next-week          correct: 100% -> 0% of runs
-  next-week          day_ok: 100% -> 0% of runs
+  courtesy-car       note_ok: 100% -> 0% of runs
   ...
 ```
 
@@ -379,12 +380,14 @@ failing. For a voice agent that is a finding and not a nuisance: it means the ou
 depends on the sampler.
 
 ```
-2 scenarios disagreed with themselves — the outcome a customer gets depends on the sampler:
-  code-switch: came out right in 2 of 3 runs
-  hurried:     came out right in 1 of 3 runs
+1 scenario disagreed with itself — the outcome a customer gets depends on the sampler:
+  self-correction: came out right in 1 of 3 runs
 ```
 
-(The two agents punchin ships are deterministic and never go flaky. A model will.)
+That is a real model over three runs of the corpus, and it is the scenario the whole project starts
+from: she says Tuesday, takes it back, says Wednesday. Twice out of three the agent booked the Tuesday.
+A single-sample gate would have called that a pass or a failure depending on which run it saw. (The two
+scripted agents punchin ships are deterministic and never go flaky. A model does.)
 
 What counts as worse:
 
@@ -625,9 +628,14 @@ about it — the plate, the day, whether a booking should happen at all.
 | `hurried` | Everything in the first breath; asking again is the failure. |
 | `plain-booking` | The control. Anything a change breaks here is a regression. |
 
-Two scripted agents keep the graders honest: `careful` reaches the expected outcome on all ten, and
-`careless` makes each built-in mistake. Both run in CI. If a change makes them agree, the corpus has
-stopped measuring anything, and that is a failure before a model is ever run.
+Two scripted agents keep the graders honest. `careful` reaches the expected outcome on all ten.
+`careless` breaks six of them in a specific way each — books the day she took back, looks up the plate
+she corrected, hears *next* Wednesday as this one, drops the courtesy car from the note, loses the extra
+job in the code-switched line, and keeps pressing a customer who already said no. The remaining four it
+gets right, which is the point: a scenario only catches a mistake somebody built for it.
+
+Both are exercised in CI. If a change makes them agree, the corpus has stopped measuring anything, and
+that is a failure before a model is ever run.
 
 ## Down a phone line
 

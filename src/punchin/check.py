@@ -204,8 +204,9 @@ class Checked:
             lines.append(f"no regressions across {runs}")
         if self.flaky:
             lines.append(
-                f"\n{len(self.flaky)} scenarios disagreed with themselves — the outcome a customer "
-                f"gets depends on the sampler:"
+                f"\n{len(self.flaky)} scenario{'s' if len(self.flaky) != 1 else ''} disagreed with "
+                f"{'themselves' if len(self.flaky) != 1 else 'itself'} — the outcome a customer gets "
+                f"depends on the sampler:"
             )
             lines.extend(f"  {found}" for found in self.flaky)
         elif self.trials > self.scenarios:
