@@ -7,9 +7,10 @@ enters, because the agent's lines are always the recorded ones.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from statistics import mean, median
+from statistics import mean, median, stdev
 
 from punchin.call import Call
 from punchin.goal import facts
@@ -167,6 +168,30 @@ def across(reports: Sequence[Report]) -> str:
     )
 
 
+def paired(full: Repeated, dropped: Repeated) -> tuple[float, float, int]:
+    """How much one field is worth, paired turn by turn: the mean difference, its standard error, n.
+
+    Comparing the two arms' averages throws away the thing that makes them comparable. Most of the
+    variance in this metric is turn difficulty — a turn where the customer says "Ja." scores differently
+    from one where she corrects herself, whatever the goal state says — and that difficulty is identical
+    on both sides of the comparison. Pairing by turn cancels it, so a field worth 0.10 can be seen
+    through 0.13 of run-to-run spread instead of drowning in it.
+    """
+    differences: list[float] = []
+    for with_it, without_it in zip(full.runs, dropped.runs, strict=False):
+        by_index = {turn.index: turn.jaccard for turn in without_it.turns}
+        differences.extend(
+            turn.jaccard - by_index[turn.index] for turn in with_it.turns if turn.index in by_index
+        )
+    if not differences:
+        return 0.0, 0.0, 0
+    middle = mean(differences)
+    if len(differences) < 2:
+        return middle, 0.0, len(differences)
+    spread = stdev(differences) / math.sqrt(len(differences))
+    return middle, spread, len(differences)
+
+
 @dataclass
 class Ablated:
     """An ablation where every arm was measured several times, so a delta can be read against noise."""
@@ -180,19 +205,28 @@ class Ablated:
         """The widest spread any single arm showed. A delta under this is not a finding."""
         return max([self.full.spread, *(arm.spread for arm in self.dropped.values())], default=0.0)
 
+    def worth(self, name: str) -> tuple[float, float, int]:
+        return paired(self.full, self.dropped[name])
+
     def text(self) -> str:
         lines = [
             f"{self.call}: what each part of the goal state is worth",
             self.full.one_line("everything"),
+            "",
+            f"  {'field':18} {'paired':>8} {'± s.e.':>8} {'turns':>6}   verdict",
         ]
-        for name, arm in sorted(self.dropped.items(), key=lambda kv: kv[1].mean):
-            delta = self.full.mean - arm.mean
-            verdict = f"{delta:+.2f}" if abs(delta) > self.noise else "under the noise"
-            lines.append(f"{arm.one_line('without ' + name)}  worth {verdict}")
+        for name in sorted(self.dropped, key=lambda n: -self.worth(n)[0]):
+            middle, error, count = self.worth(name)
+            # Two standard errors either side of zero: the usual bar, stated so it can be argued with.
+            if error > 0 and abs(middle) > 2 * error:
+                verdict = "carries its weight" if middle > 0 else "makes it worse"
+            else:
+                verdict = "not distinguishable from zero"
+            lines.append(f"  {name:18} {middle:+8.3f} {error:8.3f} {count:6}   {verdict}")
         spent = self.full.cost_usd + sum(a.cost_usd for a in self.dropped.values())
         lines.append(
-            f"  noise floor {self.noise:.2f} (the widest spread any one arm showed); ${spent:.3f}. "
-            f"A delta under it is the sampler, not the field."
+            f"\n  Paired by turn, so turn difficulty cancels. Run-to-run spread on the whole call was "
+            f"{self.noise:.2f}, which is why the means alone say nothing. ${spent:.3f}."
         )
         return "\n".join(lines)
 
