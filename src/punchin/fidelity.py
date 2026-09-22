@@ -93,6 +93,50 @@ def without(goal: GoalState, field: str) -> GoalState:
     return goal.model_copy(update=blank)
 
 
+@dataclass
+class Repeated:
+    """The same measurement several times, because one run of it is not a number.
+
+    The simulator is sampled, so fidelity has a spread. Measured on one call, the same goal state has
+    come back anywhere from 0.60 to 0.80. Any claim that a change to the simulator moved fidelity has
+    to clear that spread, and the only way to know what it is, is to run the thing again.
+    """
+
+    call: str
+    runs: list[Report] = field(default_factory=list)
+
+    @property
+    def scores(self) -> list[float]:
+        return [run.mean_jaccard for run in self.runs]
+
+    @property
+    def mean(self) -> float:
+        return mean(self.scores) if self.scores else 0.0
+
+    @property
+    def spread(self) -> float:
+        """Widest minus narrowest: the noise a claimed improvement has to beat."""
+        return max(self.scores) - min(self.scores) if len(self.scores) > 1 else 0.0
+
+    @property
+    def cost_usd(self) -> float:
+        return sum(run.cost_usd for run in self.runs)
+
+    def one_line(self, label: str = "") -> str:
+        name = label or self.call[-40:]
+        each = " ".join(f"{score:.2f}" for score in self.scores)
+        return (
+            f"  {name:40} jaccard {self.mean:.2f}  spread {self.spread:.2f}  ({each})  ${self.cost_usd:.3f}"
+        )
+
+
+def repeated(call: Call, goal: GoalState, model: Model, times: int) -> Repeated:
+    found = Repeated(call.id)
+    for _ in range(max(1, times)):
+        found.runs.append(teacher_forced(call, goal, model))
+    return found
+
+
 def teacher_forced(call: Call, goal: GoalState, model: Model) -> Report:
     report = Report(call.id)
     for turn in call.turns:
@@ -124,31 +168,38 @@ def across(reports: Sequence[Report]) -> str:
 
 
 @dataclass
-class Ablation:
+class Ablated:
+    """An ablation where every arm was measured several times, so a delta can be read against noise."""
+
     call: str
-    full: Report
-    dropped: dict[str, Report] = field(default_factory=dict)
+    full: Repeated
+    dropped: dict[str, Repeated] = field(default_factory=dict)
+
+    @property
+    def noise(self) -> float:
+        """The widest spread any single arm showed. A delta under this is not a finding."""
+        return max([self.full.spread, *(arm.spread for arm in self.dropped.values())], default=0.0)
 
     def text(self) -> str:
         lines = [
             f"{self.call}: what each part of the goal state is worth",
-            f"  {'everything':18} jaccard {self.full.mean_jaccard:.2f}  exact {self.full.exact_rate:.0%}",
+            self.full.one_line("everything"),
         ]
-        for name, report in sorted(self.dropped.items(), key=lambda kv: kv[1].mean_jaccard):
-            cost = self.full.mean_jaccard - report.mean_jaccard
-            worth = f"{cost:+.2f}" if abs(cost) >= 0.005 else "  ~0"
-            lines.append(
-                f"  without {name:10} jaccard {report.mean_jaccard:.2f}  exact "
-                f"{report.exact_rate:.0%}   worth {worth}"
-            )
-        spent = self.full.cost_usd + sum(r.cost_usd for r in self.dropped.values())
-        lines.append(f"  ${spent:.3f}. A field worth ~0 is one the simulator was not using.")
+        for name, arm in sorted(self.dropped.items(), key=lambda kv: kv[1].mean):
+            delta = self.full.mean - arm.mean
+            verdict = f"{delta:+.2f}" if abs(delta) > self.noise else "under the noise"
+            lines.append(f"{arm.one_line('without ' + name)}  worth {verdict}")
+        spent = self.full.cost_usd + sum(a.cost_usd for a in self.dropped.values())
+        lines.append(
+            f"  noise floor {self.noise:.2f} (the widest spread any one arm showed); ${spent:.3f}. "
+            f"A delta under it is the sampler, not the field."
+        )
         return "\n".join(lines)
 
 
-def ablation(call: Call, goal: GoalState, model: Model, fields: Sequence[str]) -> Ablation:
-    """Measure fidelity once with everything, then once per field withheld."""
-    found = Ablation(call.id, teacher_forced(call, goal, model))
+def ablation(call: Call, goal: GoalState, model: Model, fields: Sequence[str], times: int = 1) -> Ablated:
+    """Measure fidelity with everything, then once per field withheld, `times` runs each."""
+    found = Ablated(call.id, repeated(call, goal, model, times))
     for name in fields:
-        found.dropped[name] = teacher_forced(call, without(goal, name), model)
+        found.dropped[name] = repeated(call, without(goal, name), model, times)
     return found

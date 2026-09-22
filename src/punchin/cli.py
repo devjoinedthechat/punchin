@@ -22,7 +22,7 @@ from punchin.call import Call
 from punchin.check import baseline_from, compare, load_baseline, report
 from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, normalize_reg, serve
-from punchin.fidelity import FIELDS, ablation, across, teacher_forced
+from punchin.fidelity import FIELDS, ablation, across, repeated, teacher_forced
 from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
 from punchin.importer import read_call, scenario_for
@@ -191,7 +191,11 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
             goal, _ = extract(call, model, TODAY)
 
         if args.ablate:
-            print(ablation(call, goal, model, FIELDS).text())
+            print(ablation(call, goal, model, FIELDS, times=args.repeat).text())
+            continue
+
+        if args.repeat > 1:
+            print(repeated(call, goal, model, args.repeat).one_line())
             continue
 
         report = teacher_forced(call, goal, model)
@@ -517,6 +521,12 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
                 "--ablate",
                 action="store_true",
                 help="drop one goal-state field at a time and report what each is worth",
+            )
+            sub.add_argument(
+                "--repeat",
+                type=int,
+                default=1,
+                help="measure this many times; the simulator is sampled, so one run is not a number",
             )
         add_scenario_flag(sub)
         sub.set_defaults(run=run)
