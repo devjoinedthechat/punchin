@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field, field_validator
 
 Speaker = Literal["agent", "customer"]
 FAREWELL = "[FARVEL]"  # the agent ends the call by ending its line with this
+# Raise this whenever a field changes meaning rather than merely appearing. A recording written by a
+# newer punchin is refused with a sentence rather than a validation error thirty lines long.
+FORMAT = 1
 
 
 class ToolCall(BaseModel):
@@ -56,6 +59,7 @@ class Turn(BaseModel):
 
 
 class Call(BaseModel):
+    format: int = FORMAT
     id: str
     scenario: str
     agent: str
@@ -96,7 +100,14 @@ class Call(BaseModel):
 
     @classmethod
     def load(cls, path: Path) -> Call:
-        return cls.model_validate_json(path.read_text())
+        raw = json.loads(path.read_text())
+        written = raw.get("format", FORMAT)
+        if written > FORMAT:
+            raise ValueError(
+                f"{path} was written by a newer punchin (recording format {written}, this build reads "
+                f"{FORMAT}); upgrade punchin or record it again"
+            )
+        return cls.model_validate(raw)
 
 
 def call_id(scenario: str, agent: str, at: dt.datetime) -> str:
