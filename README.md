@@ -345,19 +345,29 @@ punchin soundness --scenario self-correction --at 4 --trials 3 \
 in the tool. `fork-pinned` against `fork-scripted` is whether the simulator changes it — a gap there is
 a limit of simulation. They need different fixes, so they are reported apart.
 
+On `self-correction`, forked at turn 4, with a baseline prompt that really does book the day she took
+back and a change that tells the agent to take her correction and read the day back:
+
 ```
+  the recording being forked was wrong
+
   live, full re-run          correct 3/3  (44%-100%)   <- ground truth
   fork, scripted customer    correct 3/3  (44%-100%)
   fork, pinned customer      correct 3/3  (44%-100%)   <- what punchin does
 
   the fork mechanism moves the answer by +0%
   the pinned customer moves it by       +0%
+  forks and live runs agreed on every one of 3 trials
 ```
 
-Read the intervals before the point estimates. Three trials cannot distinguish a sound fork from one
-that is ten percent optimistic, and when every arm sits at its ceiling the run shows agreement without
-having had much chance to show anything else. What this buys is a check you can run on **your** agent
-and your scenario, with the arms separated, rather than a number to quote.
+Read the intervals before the point estimates, and read this next part before either. Three trials
+cannot tell a sound fork from one that is ten percent optimistic. Both the baseline failing and the fix
+working are unambiguous here, so every arm sits at its ceiling and the run agrees without having had
+much chance to do anything else. The case that would really test it is one where the fix works *some*
+of the time — 2 of 3 against 1 of 3 — and engineering that on purpose is hard.
+
+So the number is not the artifact. The check is: three arms, separated, runnable against **your** agent
+and your scenario, on a claim most tools of this kind never state out loud.
 
 ## Is the simulated customer the real one?
 
