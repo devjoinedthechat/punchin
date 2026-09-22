@@ -380,24 +380,27 @@ randomness never enters, because the agent's lines are always the recorded ones.
 ```
 $ punchin fidelity .punchin/calls/*.json --goal truth --summary
 
-  …is-it-a-robot     jaccard 0.83  exact 83%  length x1.94
-  …plain-booking     jaccard 0.83  exact 60%  length x2.13
-  …self-correction   jaccard 0.63  exact 20%  length x1.53
-  …already-booked    jaccard 0.25  exact  0%  length x1.37
+  …is-it-a-robot     jaccard 0.83  exact 83%  length x1.94  over 6 turns
+  …plain-booking     jaccard 0.83  exact 60%  length x2.13  over 5 turns
+  …self-correction   jaccard 0.63  exact 20%  length x1.53  over 5 turns
+  …already-booked    jaccard 0.00  exact  0%  length x1.37  over 2 turns
 
-10 calls, 47 customer turns: jaccard mean 0.65, median 0.68, range 0.25-0.83; exact 45%; $0.314
+10 calls, 47 customer turns
+  per turn (pooled): jaccard 0.69, exact 57%
+  per call:          mean 0.65, median 0.68, range 0.00-0.93
 ```
 
-Two things only the spread shows, and the reason a single call was never enough. **The simulator is two
-to four times more verbose than the customer it is playing** — the length column, on every call. And it
-is far worse at declining than at agreeing: `already-booked`, where the right move is to say no thank
-you and get off the phone, is 0.25.
+**Read the pooled line.** Averaging the calls' averages gives a two-turn call the same weight as a
+ten-turn one, and a two-turn call's score moves in steps of 0.50 — it is close to a coin flip on whether
+one keyword fired. `already-booked` reading 0.00 is that, not a simulator that cannot say no: its first
+turn, the actual refusal, matches well.
 
-The terseness cuts both ways, so read the number as a floor rather than a verdict. This corpus's
-customers answer in one or two words by construction (*"Ja."*, *"Onsdag."*), and a simulator writing a
-natural sentence is marked down for it. On a recording made by a model, where the agent's own lines are
-conversational, the same measurement gives 0.80. What the number is genuinely good for is a change to
-the simulator: run it before and after, on the same recordings.
+The other thing only the spread shows is that **the simulator is two to four times more verbose than the
+customer it is playing**, on every call. Some of that is this corpus: its customers answer in one or two
+words by construction (*"Ja."*, *"Onsdag."*), and a simulator writing a natural sentence is marked down
+for it. On a recording made by a model, where the agent's own lines are conversational, the same
+measurement gives 0.80. So read 0.69 as a floor, and use the number for what it is actually good at: a
+change to the simulator, measured before and after on the same recordings.
 
 ### What each part of the goal state is worth
 
