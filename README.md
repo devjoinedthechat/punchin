@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-49-brightgreen" alt="49 tests">
+  <img src="https://img.shields.io/badge/tests-62-brightgreen" alt="62 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -22,6 +22,7 @@
 <p align="center">
   <a href="#try-it">Try it</a> ·
   <a href="#why-this-is-hard">Why this is hard</a> ·
+  <a href="#as-a-gate">As a gate</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
   <a href="#is-the-simulated-customer-the-real-one">Fidelity</a> ·
   <a href="#the-corpus">Corpus</a> ·
@@ -153,6 +154,36 @@ uv run punchin fork     .punchin/calls/<call>.json --at 6 --repeat 3 --system-su
 Each turn is one `claude -p` with every built-in tool off and the dealership system attached over MCP,
 in a scrubbed environment so the child inherits nothing from the session that launched it. Tool calls
 are read back out of its stream-json exactly as the model made them.
+
+## As a gate
+
+`punchin check` is the part you put in front of a deploy. It takes the numbers a run produced, holds
+them against the numbers of the last good run, and exits non-zero naming every scenario that moved the
+wrong way. It calls no model: it reads recordings.
+
+```sh
+punchin record --agent careful --out .punchin/ci        # or your own agent
+punchin check  .punchin/ci/*.json --update              # once, to say what good looks like
+punchin check  .punchin/ci/*.json                       # every build after that
+```
+
+```
+14 regressions across 10 scenarios
+  already-booked     agent_repeats: 1 -> 5
+  code-switch        note_ok: was true, now false
+  next-week          correct: was true, now false
+  self-correction    day_ok: was true, now false
+  wrong-reg-first    customer_stalls: 0 -> 3
+  ...
+```
+
+Correctness, the day, the plate and the workshop note must not go from true to false. The number of
+times read out in one breath, the agent repeating itself and the customer stalling must not go up.
+Turns and lookups have a little slack, because a call is allowed to wander. A metric missing from
+either side is never a regression, so a text run can be checked against a text baseline without the
+audio columns inventing failures.
+
+This repository gates itself on [baseline.json](baseline.json) in CI.
 
 ## How a fork works
 

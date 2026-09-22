@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from pathlib import Path
 
 from punchin.agent import Agent, Lead
@@ -12,6 +13,8 @@ from punchin.dms import Dms, fresh
 from punchin.scenarios import Scenario
 
 MAX_TURNS = 20
+
+log = logging.getLogger(__name__)
 
 
 def now() -> dt.datetime:
@@ -36,6 +39,9 @@ def converse(
             cost_usd=spoken.cost_usd,
         )
         call.turns.append(turn)
+        log.info("%2d agent  %s", turn.index, _short(turn.spoken))
+        for made in turn.tool_calls:
+            log.info("        -> %s %s", made.tool, "ERROR" if made.error else "ok")
         at = now()
         answer = customer.respond(call)
         if answer is None:
@@ -53,12 +59,21 @@ def converse(
                 audio_ms=answer.audio_ms,
             )
         )
+        said = call.turns[-1]
+        log.info("%2d kunde  %s", said.index, _short(said.spoken))
+        if said.heard is not None and said.heard.strip() != said.spoken.strip():
+            log.info("    heard  %s", _short(said.heard))
         if turn.ends_call:
             call.notes["ended_by"] = "agent"
             break
     else:
         call.notes["ended_by"] = "max_turns"
     return call
+
+
+def _short(text: str, width: int = 88) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= width else flat[: width - 1] + "…"
 
 
 def finish(call: Call, dms: Dms) -> Call:

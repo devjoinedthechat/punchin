@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import sys
 from pathlib import Path
 
 from punchin import __version__
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
+from punchin.check import baseline_from, compare, load_baseline, report
 from punchin.customer import Customer, ScriptedCustomer
 from punchin.dms import TODAY, serve
 from punchin.fidelity import teacher_forced
 from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
 from punchin.metrics import summarize
-from punchin.model import ClaudeCodeModel, Model
+from punchin.model import ClaudeCodeModel, Model, ModelDidNotRun
 from punchin.record import record
 from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario, vocabulary
 
@@ -160,6 +163,10 @@ HEARD_COLUMNS = ["reg_heard", "reg_survived", "lookup_attempts"]
 def cmd_metrics(args: argparse.Namespace) -> int:
     calls = [Call.load(Path(path)) for path in args.call]
     rows = [summarize(call, BY_ID[call.scenario]) for call in calls]
+    if args.json:
+        for row in rows:
+            print(json.dumps(row, sort_keys=True, default=str))
+        return 0
     keys = list(BASE_COLUMNS)
     if any(key in row for row in rows for key in HEARD_COLUMNS):
         keys += HEARD_COLUMNS  # only there when a recogniser sat in the middle
@@ -197,19 +204,47 @@ def cmd_fork(args: argparse.Namespace) -> int:
     return 0 if report.fixed == len(report.attempts) and report.attempts else 1
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    calls = [Call.load(Path(path)) for path in args.call]
+    rows = [summarize(call, BY_ID[call.scenario]) for call in calls]
+    baseline_path = Path(args.baseline)
+    if args.update:
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(json.dumps(baseline_from(rows), indent=2, sort_keys=True) + "\n")
+        print(f"baseline written from {len(rows)} scenarios: {baseline_path}")
+        return 0
+    if not baseline_path.exists():
+        raise SystemExit(f"no baseline at {baseline_path}; write one with `punchin check --update`")
+    found = compare(rows, load_baseline(baseline_path))
+    print(report(found, len(rows)))
+    return 1 if found else 0
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     serve(Path(args.state))
     return 0
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="punchin", description=__doc__)
+    # `-q` is accepted before or after the subcommand. SUPPRESS on the subcommand copy stops its
+    # default clobbering a `-q` that was given first.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="only the report, no progress",
+    )
+
+    root = argparse.ArgumentParser(prog="punchin", description=__doc__, parents=[common])
     root.add_argument("--version", action="version", version=f"punchin {__version__}")
+    root.set_defaults(quiet=False)
     commands = root.add_subparsers(dest="command", required=True)
 
-    commands.add_parser("scenarios", help="list the corpus").set_defaults(run=cmd_scenarios)
+    commands.add_parser("scenarios", help="list the corpus", parents=[common]).set_defaults(run=cmd_scenarios)
 
-    rec = commands.add_parser("record", help="record a scenario with an agent")
+    rec = commands.add_parser("record", parents=[common], help="record a scenario with an agent")
     rec.add_argument("--scenario", default="all", help="a scenario id, or 'all'")
     rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
     rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
@@ -218,7 +253,7 @@ def parser() -> argparse.ArgumentParser:
     rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
     rec.set_defaults(run=cmd_record)
 
-    sh = commands.add_parser("show", help="print a recorded call")
+    sh = commands.add_parser("show", parents=[common], help="print a recorded call")
     sh.add_argument("call", nargs="+")
     sh.set_defaults(run=cmd_show)
 
@@ -226,14 +261,16 @@ def parser() -> argparse.ArgumentParser:
         ("extract", cmd_extract, "read the customer's goal state out of recorded calls"),
         ("fidelity", cmd_fidelity, "teacher-forced: does the pinned customer say what the real one said?"),
     ):
-        sub = commands.add_parser(name, help=help_text)
+        sub = commands.add_parser(name, parents=[common], help=help_text)
         sub.add_argument("call", nargs="+")
         sub.add_argument("--model", default="claude-sonnet-5")
         if name == "fidelity":
             sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
         sub.set_defaults(run=run)
 
-    fk = commands.add_parser("fork", help="re-run a recorded call from one turn with the change applied")
+    fk = commands.add_parser(
+        "fork", parents=[common], help="re-run a recorded call from one turn with the change applied"
+    )
     fk.add_argument("call")
     fk.add_argument("--at", type=int, required=True, help="the agent turn to fork at (see `punchin show`)")
     fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
@@ -245,11 +282,22 @@ def parser() -> argparse.ArgumentParser:
     add_audio_flags(fk)
     fk.set_defaults(run=cmd_fork)
 
-    met = commands.add_parser("metrics", help="outcome and feel numbers for recorded calls")
+    met = commands.add_parser("metrics", parents=[common], help="outcome and feel numbers for recorded calls")
     met.add_argument("call", nargs="+")
+    met.add_argument("--json", action="store_true", help="one JSON object per call, for a pipeline")
     met.set_defaults(run=cmd_metrics)
 
-    dms = commands.add_parser("dms", help="the DMS as an MCP server over stdio (what the model calls)")
+    chk = commands.add_parser(
+        "check", parents=[common], help="fail when a run is worse than the recorded baseline"
+    )
+    chk.add_argument("call", nargs="+")
+    chk.add_argument("--baseline", default=str(DEFAULT_OUT.parent / "baseline.json"))
+    chk.add_argument("--update", action="store_true", help="write the baseline from these calls instead")
+    chk.set_defaults(run=cmd_check)
+
+    dms = commands.add_parser(
+        "dms", parents=[common], help="the DMS as an MCP server over stdio (what the model calls)"
+    )
     dms.add_argument("--state", required=True)
     dms.set_defaults(run=cmd_dms)
     return root
@@ -257,7 +305,20 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    return int(args.run(args))
+    # Progress goes to stderr so that stdout stays the report, pipeable and parseable.
+    logging.basicConfig(
+        level=logging.WARNING if args.quiet else logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+    try:
+        return int(args.run(args))
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130
+    except (ModelDidNotRun, FileNotFoundError) as stopped:
+        print(f"punchin: {stopped}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -18,6 +19,15 @@ from punchin.call import ToolCall
 # Left out of the child's environment: a parent Claude Code session's variables would make the child
 # think it is nested inside it, and ANTHROPIC_* would point it at a key or endpoint meant for the parent.
 _INHERITED = ("CLAUDE", "VSCODE", "MCP_", "ANTHROPIC_")
+
+log = logging.getLogger(__name__)
+
+
+class ModelDidNotRun(RuntimeError):
+    """Claude Code answered without invoking a model: not logged in, or out of budget."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"Claude Code ran no model ({detail}). Check `claude` is logged in.")
 
 
 @dataclass
@@ -69,6 +79,8 @@ class ClaudeCodeModel:
         max_turns: int = 8,
         budget_usd: float = 0.50,
         timeout_s: float = 240.0,
+        attempts: int = 3,
+        backoff_s: float = 2.0,
     ) -> None:
         if command is None:
             found = find_claude()
@@ -80,6 +92,8 @@ class ClaudeCodeModel:
         self.max_turns = max_turns
         self.budget_usd = budget_usd
         self.timeout_s = timeout_s
+        self.attempts = attempts
+        self.backoff_s = backoff_s
         self.name = f"claude-code:{model}"
 
     def _arguments(
@@ -121,6 +135,26 @@ class ClaudeCodeModel:
         *,
         mcp: dict[str, Any] | None = None,
         schema: dict[str, Any] | None = None,
+    ) -> Completion:
+        """One completion, retrying a transient failure. A logged-out client is never retried."""
+        for attempt in range(1, self.attempts + 1):
+            try:
+                return self._once(system, prompt, mcp, schema)
+            except ModelDidNotRun:
+                raise  # retrying will not log anybody in
+            except (RuntimeError, TimeoutError) as failure:
+                if attempt == self.attempts:
+                    raise
+                log.warning("model call failed (%d/%d), retrying: %s", attempt, self.attempts, failure)
+                time.sleep(self.backoff_s * attempt)
+        raise AssertionError("unreachable")
+
+    def _once(
+        self,
+        system: str,
+        prompt: str,
+        mcp: dict[str, Any] | None,
+        schema: dict[str, Any] | None,
     ) -> Completion:
         env = {k: v for k, v in os.environ.items() if not k.startswith(_INHERITED)}
         with tempfile.TemporaryDirectory(prefix="punchin-claude-code-") as cwd:
@@ -189,13 +223,19 @@ class ClaudeCodeModel:
         if final.get("is_error"):
             raise RuntimeError(f"Claude Code failed: {final.get('result') or final.get('subtype')}")
         text = str(final.get("result") or "")
+        models = final.get("modelUsage") or {}
+        if not models and not calls:
+            # A logged-out Claude Code answers `subtype: success` with "Not logged in · Please run
+            # /login" and no model usage at all. Recorded as an agent turn, that becomes a call where
+            # the agent says it to a customer. No model ran, so this is a failure, not a completion.
+            raise ModelDidNotRun(text.strip()[:200] or "no model usage reported")
         structured = final.get("structured_output")
         if structured is None and text.lstrip().startswith(("{", "[")):
             try:
                 structured = json.loads(text)
             except json.JSONDecodeError:
                 structured = None
-        used = ", ".join((final.get("modelUsage") or {}).keys()) or self.model
+        used = ", ".join(models) or self.model
         return Completion(text, calls, structured, float(final.get("total_cost_usd") or 0.0), used)
 
 

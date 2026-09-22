@@ -63,6 +63,22 @@ def customer_line(prompt: str) -> str:
 
 async def main(argv: list[str]) -> None:
     prompt = argv[argv.index("-p") + 1]
+    if os.environ.get("FAKE_CLAUDE_LOGGED_OUT"):
+        # What a logged-out Claude Code really answers: success, no model, an apology as the result.
+        emit(
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "Not logged in · Please run /login",
+                "num_turns": 1,
+                "total_cost_usd": 0,
+                "modelUsage": {},
+            }
+        )
+        return
+    if os.environ.get("FAKE_CLAUDE_FLAKY_ONCE") and not Path(os.environ["FAKE_CLAUDE_FLAKY_ONCE"]).exists():
+        Path(os.environ["FAKE_CLAUDE_FLAKY_ONCE"]).touch()
+        raise SystemExit("transient failure")
     leaked = sorted(k for k in os.environ if k.startswith(("CLAUDE", "VSCODE", "MCP_", "ANTHROPIC_")))
 
     if "--json-schema" in argv:
@@ -76,6 +92,7 @@ async def main(argv: list[str]) -> None:
                 "structured_output": out,
                 "num_turns": 1,
                 "total_cost_usd": 0.001,
+                "modelUsage": {"claude-sonnet-5": {}},
             }
         )
         return
@@ -90,6 +107,7 @@ async def main(argv: list[str]) -> None:
                 "result": text,
                 "num_turns": 1,
                 "total_cost_usd": 0.002,
+                "modelUsage": {"claude-sonnet-5": {}},
             }
         )
         return
