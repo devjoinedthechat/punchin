@@ -486,6 +486,10 @@ A field whose paired difference sits inside two standard errors of zero is repor
 distinguishable from zero*. One that stays there is a field the simulator was never using, and it should
 come out of the schema rather than sit there looking principled.
 
+Budget for it. Seven arms at three repeats over a five-turn call is a hundred model calls, and each one
+is a separate process — tens of minutes and a few tenths of a dollar even with `--workers`. This is a
+question you answer when you change the goal state, not something to run in CI.
+
 The same run also grades the extraction that produced the goal state, against the corpus truth: on the
 headline call it recovered the plate and the *corrected* Wednesday, not the Tuesday she took back.
 
