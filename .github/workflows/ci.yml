@@ -15,6 +15,16 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run ruff check src tests
       - run: uv run mypy
+      # The README carries a test count. A badge nobody checks is a number that drifts, and this
+      # project's whole argument is that a published figure should be one somebody can reproduce.
+      - name: the README's test count is the test count
+        run: |
+          claimed=$(grep -o 'badge/tests-[0-9]*' README.md | grep -o '[0-9]*')
+          actual=$(uv run pytest -q --collect-only 2>/dev/null | grep -o '^[0-9]* tests collected' | grep -o '^[0-9]*')
+          if [ "$claimed" != "$actual" ]; then
+            echo "README says $claimed tests, the suite has $actual" >&2; exit 1
+          fi
+          echo "$actual tests, as advertised"
 
   test:
     runs-on: ubuntu-latest
