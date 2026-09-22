@@ -139,6 +139,35 @@ def facts(goal: GoalState, text: str) -> set[str]:
     return found
 
 
+# What the agent's line solicits. A customer answering more than this is volunteering.
+SOLICITS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("reg", re.compile(r"nummerplade|registreringsnummer|reg\.? ?nr", re.I)),
+    ("day", re.compile(r"hvilken dag|hvornår|passer dig|dag der passer|hvad med|hvilken ugedag", re.I)),
+    ("time", re.compile(r"\bkl\.?\s*\d|klokken|tidspunkt|hvilket af|formiddag|eftermiddag", re.I)),
+    ("yes", re.compile(r"skal jeg booke|skal jeg reservere|passer det|er det rigtigt|bekræft|\?", re.I)),
+    ("no", re.compile(r"skal jeg booke|passer det|er det rigtigt|\?", re.I)),
+    ("bye", re.compile(r"hej hej|farvel|vi ses|ha'? det|hav en god", re.I)),
+)
+# Things a customer may always say without it counting as volunteering.
+FREELY = frozenset({"robot"})
+
+
+def solicited(agent_line: str) -> set[str]:
+    """The facts the agent's line asked for. Anything else in the answer was offered unprompted."""
+    return {name for name, pattern in SOLICITS if pattern.search(agent_line)}
+
+
+def volunteered(goal: GoalState, agent_line: str, customer_line: str) -> set[str]:
+    """What the customer put into a turn that the agent had not asked for.
+
+    This is the measure the soundness check needs and fidelity does not provide. A simulated customer
+    that answers more than the question makes the agent's job easier than the real call was, and every
+    fix then looks like it worked. Overlap with the real turn cannot see that: a simulator can match
+    every fact the real customer gave *and* hand over three more.
+    """
+    return facts(goal, customer_line) - solicited(agent_line) - FREELY
+
+
 def score(found: GoalState, truth: GoalState) -> dict[str, Any]:
     """How an extracted goal state compares with the scenario's: the plate, the day, and the extras."""
     want = {e.lower() for e in truth.constraints + truth.extras}

@@ -155,6 +155,7 @@ def test_the_corpus_number_is_pooled_by_turn_not_averaged_over_calls() -> None:
     class FakeTurn:
         def __init__(self, score: float) -> None:
             self.jaccard, self.exact = score, score == 1.0
+            self.over_helpful = 0
 
     class FakeReport:
         def __init__(self, scores: list[float]) -> None:
@@ -179,6 +180,7 @@ def test_a_corpus_of_long_calls_gets_no_warning() -> None:
     class FakeTurn:
         def __init__(self) -> None:
             self.jaccard, self.exact = 0.8, False
+            self.over_helpful = 0
 
     class FakeReport:
         def __init__(self) -> None:

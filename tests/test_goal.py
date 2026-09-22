@@ -49,3 +49,32 @@ def test_a_polite_refusal_is_a_refusal_and_not_also_an_agreement() -> None:
     assert facts(GOAL, "Fint.") == {"yes"}
     # whichever came first is what the line is doing
     assert facts(GOAL, "Ja, men ikke i denne uge.") == {"yes", "next_week"}
+
+
+def test_what_the_agent_asked_for_is_read_off_its_line() -> None:
+    from punchin.goal import solicited
+
+    assert "reg" in solicited("Må jeg få nummerpladen?")
+    assert "day" in solicited("Hvilken dag passer dig?")
+    assert "time" in solicited("Jeg har en tid kl. 8. Passer det?")
+    assert solicited("Så er den booket. Hej hej.") == {"bye"}
+
+
+def test_a_customer_who_answers_more_than_the_question_is_volunteering() -> None:
+    """The measure the soundness check needs: overlap cannot see a simulator that over-helps."""
+    from punchin.goal import volunteered
+
+    asked_day = "Hvilken dag passer dig?"
+    assert volunteered(GOAL, asked_day, "Onsdag.") == set()
+    assert volunteered(GOAL, asked_day, "Onsdag, og gerne klokken 8.") == {"time"}
+    # answering the question asked is never volunteering, however much of it there is
+    assert volunteered(GOAL, "Må jeg få nummerpladen?", "Det er AB 12 345.") == set()
+    # and a plate given before anyone asked is
+    assert volunteered(GOAL, "Passer det nu?", "Ja, det er AB 12 345.") == {"reg"}
+
+
+def test_asking_whether_it_is_a_robot_is_never_counted_as_volunteering() -> None:
+    """Some things a customer says whenever they like, and they say nothing about difficulty."""
+    from punchin.goal import volunteered
+
+    assert volunteered(GOAL, "Passer det nu?", "Er det en robot jeg taler med?") == set()

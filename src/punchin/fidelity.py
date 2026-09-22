@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from statistics import mean, median, stdev
 
 from punchin.call import Call
-from punchin.goal import facts
+from punchin.goal import facts, volunteered
 from punchin.model import Model
 from punchin.pinned import PinnedCustomer
 from punchin.scenarios import GoalState
@@ -26,6 +26,18 @@ class TurnScore:
     simulated: str
     real_facts: set[str]
     simulated_facts: set[str]
+    asked: str = ""
+    real_extra: set[str] = field(default_factory=set)
+    simulated_extra: set[str] = field(default_factory=set)
+
+    @property
+    def over_helpful(self) -> int:
+        """How much more than the question the simulator answered, against what the real customer did.
+
+        Positive means the simulated call was easier than the real one. Overlap cannot see this: a
+        simulator can match every fact the real customer gave and still hand over three more.
+        """
+        return len(self.simulated_extra) - len(self.real_extra)
 
     @property
     def jaccard(self) -> float:
@@ -59,16 +71,27 @@ class Report:
     def mean_length_ratio(self) -> float:
         return mean(t.length_ratio for t in self.turns) if self.turns else 1.0
 
+    @property
+    def over_helpful(self) -> float:
+        """Facts per turn the simulator gave unprompted, beyond what the real customer gave.
+
+        The number the soundness check wants. Above zero and forks are running against an easier
+        customer than the one who was really on the call, which is how a fix looks better than it is.
+        """
+        return mean(t.over_helpful for t in self.turns) if self.turns else 0.0
+
     def one_line(self) -> str:
         return (
-            f"  {self.call[-42:]:42} jaccard {self.mean_jaccard:.2f}  exact {self.exact_rate:.0%}"
-            f"  length x{self.mean_length_ratio:.2f}  over {len(self.turns)} turns  ${self.cost_usd:.3f}"
+            f"  {self.call[-38:]:38} jaccard {self.mean_jaccard:.2f}  exact {self.exact_rate:.0%}"
+            f"  length x{self.mean_length_ratio:.2f}  helps {self.over_helpful:+.2f}"
+            f"  over {len(self.turns)} turns  ${self.cost_usd:.3f}"
         )
 
     def text(self) -> str:
         lines = [
             f"{self.call}: facts jaccard {self.mean_jaccard:.2f}, exact {self.exact_rate:.0%}, "
-            f"length x{self.mean_length_ratio:.2f}, ${self.cost_usd:.3f}"
+            f"length x{self.mean_length_ratio:.2f}, volunteers {self.over_helpful:+.2f} facts a turn "
+            f"beyond what she did, ${self.cost_usd:.3f}"
         ]
         for t in self.turns:
             mark = "=" if t.exact else "≠"
@@ -153,8 +176,19 @@ def teacher_forced(call: Call, goal: GoalState, model: Model) -> Report:
         customer = PinnedCustomer(model, goal)
         simulated = customer.line(prefix)
         report.cost_usd += customer.cost_usd
+        asked = prefix.last("agent")
+        line = asked.spoken if asked else ""
         report.turns.append(
-            TurnScore(turn.index, turn.spoken, simulated, facts(goal, turn.spoken), facts(goal, simulated))
+            TurnScore(
+                turn.index,
+                turn.spoken,
+                simulated,
+                facts(goal, turn.spoken),
+                facts(goal, simulated),
+                asked=line,
+                real_extra=volunteered(goal, line, turn.spoken),
+                simulated_extra=volunteered(goal, line, simulated),
+            )
         )
     return report
 
@@ -174,6 +208,7 @@ def across(reports: Sequence[Report]) -> str:
     turns = len(every_turn)
     spent = sum(report.cost_usd for report in reports)
     exact = mean(turn.exact for report in reports for turn in report.turns) if turns else 0.0
+    helps = mean(turn.over_helpful for report in reports for turn in report.turns) if turns else 0.0
     shortest = min(len(report.turns) for report in reports)
     note = (
         f"\n  The shortest call scored {shortest} turns, so its per-call number moves in steps of "
@@ -184,7 +219,8 @@ def across(reports: Sequence[Report]) -> str:
     )
     return (
         f"\n{len(reports)} calls, {turns} customer turns"
-        f"\n  per turn (pooled): jaccard {mean(every_turn):.2f}, exact {exact:.0%}"
+        f"\n  per turn (pooled): jaccard {mean(every_turn):.2f}, exact {exact:.0%}, "
+        f"volunteers {helps:+.2f} facts a turn beyond the real customer"
         f"\n  per call:          mean {mean(scores):.2f}, median {median(scores):.2f}, "
         f"range {scores[0]:.2f}-{scores[-1]:.2f}"
         f"\n  ${spent:.3f}{note}"
