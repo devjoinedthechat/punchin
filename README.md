@@ -25,6 +25,7 @@
   <a href="#your-agent-not-this-one">Your agent</a> ·
   <a href="#a-call-you-did-not-record">Import</a> ·
   <a href="#which-call-to-fork">Triage</a> ·
+  <a href="#where-was-the-call-lost">Curve</a> ·
   <a href="#does-the-fix-break-anything-else">Sweep</a> ·
   <a href="#as-a-gate">As a gate</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
@@ -268,6 +269,39 @@ cluster nobody can explain in a sentence is not a cluster anybody can act on. A 
 faults is filed under the first one worth fixing, so it is counted once, and each group names the
 shortest call in it: the cheapest to fork and the easiest to read.
 
+## Where was the call lost?
+
+A fork answers *did this change fix this call*. It does not say **when** the call stopped being
+salvageable, which is usually the more useful thing to know: a fix that only works if applied before
+turn 4 is telling you the problem is upstream of the prompt.
+
+`punchin curve` forks the same recording at every agent turn:
+
+```sh
+punchin curve <call> --repeat 3 --system-suffix "..."
+```
+
+```
+  fork at       0     2     4     6     8
+   correct   2/2   1/2   2/2   0/2   2/2
+
+  wrong every time from turn(s) 6: that is where this call goes astray
+  still open at turn(s) 2: the outcome is decided there, not before
+  the curve rises, so a later fork did better than an earlier one. That is the
+  recording carrying the call, not the agent: a late fork tests less.
+```
+
+Three readings come out of one loop:
+
+- **A turn where every attempt failed** is where the call goes astray.
+- **A turn where attempts disagree** is where the outcome is actually decided — everything before it
+  was still open.
+- **A curve that rises** means a later fork did better than an earlier one, which is the recorded
+  prefix carrying the call rather than the agent. Forking late is an easier test, not a harder one.
+
+Run it *without* `--system-suffix` and it reads the other way: not how late a fix still rescues, but
+which turn the outcome turns on. That is credit assignment over a conversation.
+
 ## Does the fix break anything else?
 
 A change that repairs one call and breaks three is worse than no change. Give `fork` several recordings
@@ -291,6 +325,17 @@ system suffix 'Tilbyd kun én tid ad gangen.'
 It exits non-zero when anything broke, so a sweep is something a pull request can run. `--at` takes a
 turn number, or `first`, `half` or `last` — resolved against each recording's own agent turns, because
 turn 6 is a different moment in every call.
+
+Two more ways to vary one thing at a time:
+
+```sh
+punchin fork <call> --at 6 --ablate-change --system-suffix "A. B. C."   # which sentence did the work
+punchin fork <call> --at 6 --models claude-sonnet-5,claude-haiku-4-5    # does it hold on another model
+```
+
+A three-sentence fix that works tells you nothing about which sentence mattered. Dropping one at a time
+and re-forking does, and a sentence whose removal costs nothing should come out before it calcifies into
+folklore. A fix that only holds on the model you tested is not a fix either.
 
 That closes the loop: [triage](#which-call-to-fork) finds the calls worth looking at, a fork fixes one,
 a sweep says what that fix costs everywhere else, and [the gate](#as-a-gate) holds the result.
@@ -472,6 +517,36 @@ On a recording made by a model, where the agent's lines are conversational, the 
 0.80. Read 0.69 as a floor, and use the number for what it is good at: a change to the simulator,
 measured before and after on the same recordings.
 
+### Can anything tell her apart?
+
+Fact overlap asks whether the simulator said the same things, which is a proxy. The question underneath
+is whether a reader could tell the two apart, and *indistinguishable* is what faithful actually means.
+
+```sh
+punchin fidelity <call> --goal truth --discriminate
+```
+
+shows a model the conversation so far and two candidate next turns — one real, one simulated, in random
+order — and asks which came from the real customer. **Fifty per cent means it cannot tell.**
+
+```
+  real vs simulated          6/12  = 50%  (25%-75%)   want 50%
+  blind (real vs real)       6/12  = 50%  (25%-75%)   want 50%
+  floor (real vs another call) 11/12 = 92%  (65%-99%)  want high
+
+  indistinguishable at this sample size: the interval covers 50%
+```
+
+The usual objection to a model judging a model is that the scale is invented and nobody can check it.
+That does not apply here, because **this judge is calibrated against known answers**. The *blind*
+control shows it the real turn against itself: anything but 50% is a position bias. The *floor* control
+shows it a real turn against a real turn from a different call: if it cannot spot that, it is not
+discriminating at all. A run that fails either control is reported as saying nothing.
+
+It also gives the noise for free. The measurement is binomial, so the interval is exact rather than
+estimated — which is the one thing [the overlap metric](#is-the-simulated-customer-the-real-one) cannot
+offer.
+
 ### What each part of the goal state is worth
 
 ```sh
@@ -647,7 +722,13 @@ that works only some of the time would test it properly, and engineering one del
 
 **Fidelity is noisier than what it measures.** Repeated runs of one call spread 0.13 to 0.23; the
 goal-state fields are worth 0.03 to 0.10 each. Pairing and `--repeat` make the gap visible rather than
-closing it, so no field can be called worthless yet.
+closing it, so no field can be called worthless yet. `--discriminate` sidesteps the estimate — its
+interval is binomial — but a five-turn call is twelve judgements, and twelve judgements cannot separate
+a faithful simulator from one caught six times in ten.
+
+**A curve costs one fork per turn.** `punchin curve` is the most expensive thing here: a ten-turn call
+at three repeats is fifteen forks. The prefix is free and shrinks as the fork point rises, so it is
+cheaper than fifteen re-runs, but it is not cheap.
 
 **A scenario's outcome is somebody's judgement.** An imported call is graded against what a person said
 should have happened — explicit rather than inferred, which also means a wrong judgement grades
@@ -669,6 +750,7 @@ faster-whisper are all present, and `-m slow` holds the two that need a recognis
 
 ```
 punchin doctor             what works on this machine, and what to install for the rest
+punchin curve              fork at every turn: where the call was lost, and where it was not
 punchin scenarios          the corpus, and the outcome each call expects
 punchin import             somebody else's transcript, plus the outcome you say was right
 punchin triage             group the calls that went wrong, biggest group first
