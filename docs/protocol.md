@@ -87,3 +87,23 @@ halfway through a call is inspectable rather than lost.
 `punchin fork` works the same way, with one rule: `--system-suffix` is refused for `--agent command`.
 A fork's report names the change under test, and punchin cannot apply a prompt change to an agent whose
 prompt it does not own. Change your agent, and fork with the changed command.
+
+## Importing a call you already have
+
+`punchin import` reads a transcript and writes both a recording and the scenario it is graded against.
+The formats it sniffs, in order: one JSON object per line; a JSON array of turns, or an object with a
+`turns`, `conversation`, `messages` or `transcript` list; a plain `Agent:` / `Kunde:` transcript.
+
+Per turn it will take the speaker from `speaker`, `role`, `who`, `from`, `source` or `party`, the words
+from `text`, `content`, `message`, `utterance`, `transcript` or `value`, the recogniser's version from
+`heard`, `asr`, `recognised` or `asr_text`, the moment from `started_at`, `timestamp`, `time`, `ts`,
+`at` or `start`, and tool calls from `tool_calls`, `tools` or `function_calls`. Anything else is
+ignored, so a vendor's export can usually be handed over as it stands.
+
+`agent`, `assistant`, `bot`, `ai` and `sofie` are the agent; `customer`, `kunde`, `user`, `caller`,
+`human` and `client` are the customer. A turn whose speaker is neither is skipped, and a file with no
+recognisable speaker at all is refused with the names it saw.
+
+The scenario it writes is the part a transcript cannot supply: the plate, the day the customer meant,
+whether a booking should have happened, and anything the workshop needed to know. Every command then
+finds it through `--scenarios`.

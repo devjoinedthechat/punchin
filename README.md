@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-83-brightgreen" alt="83 tests">
+  <img src="https://img.shields.io/badge/tests-108-brightgreen" alt="108 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -23,6 +23,7 @@
   <a href="#try-it">Try it</a> ·
   <a href="#why-this-is-hard">Why this is hard</a> ·
   <a href="#your-agent-not-this-one">Your agent</a> ·
+  <a href="#a-call-you-did-not-record">Import</a> ·
   <a href="#as-a-gate">As a gate</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
   <a href="#is-the-simulated-customer-the-real-one">Fidelity</a> ·
@@ -187,6 +188,50 @@ the mangled version, with the truth kept back as the answer key.
 
 [docs/protocol.md](docs/protocol.md) is the full contract and
 [examples/rule_agent.py](examples/rule_agent.py) a working implementation, both exercised in CI.
+
+## A call you did not record
+
+The reason to want any of this is an archive of calls that already went wrong, and it never arrives in
+punchin's shape. `punchin import` reads the shapes it does arrive in — a JSON array of turns, one JSON
+object per line, or a plain `Agent:` / `Kunde:` transcript — and writes a recording.
+
+It also asks for something no transcript contains: **what should have happened.**
+
+```sh
+punchin import dealer-1482.txt --id dealer-1482 \
+  --reg "XY 55 123" --day 2026-10-01 --booked --booked-day 2026-10-02 --extra "lånebil"
+```
+
+```
+.punchin/calls/20260922-051808-dealer-1482-imported.json  (9 turns, 4 from the customer)
+.punchin/scenarios/dealer-1482.json  the outcome it is graded against
+```
+
+That second file is the point. No amount of parsing recovers the day the customer meant; somebody has
+to say it, once. From then on the call grades, gates and forks exactly like one punchin recorded, and
+`--scenarios` is how every command finds the outcomes you have stated.
+
+```
+        scenario           correct            day_ok             turns     agent_repeats
+     dealer-1482             False             False                 9                 1
+```
+
+She said *torsdag*; it booked Friday the 2nd. Nine turns, no repetition, no stalls, a polite goodbye —
+a call that reads perfectly and is wrong, found in an archive rather than in a corpus.
+
+Forking it at turn 6 with a read-back instruction, and one about carrying what she mentioned into the
+booking note:
+
+```
+   5 Kunde Torsdag, tak. Og jeg skal have en lånebil.
+   6 Agent Vi har torsdag den 1. oktober kl. 8:00 ledig. Passer det?
+   8 Agent Perfekt, så er du booket til torsdag den 1. oktober kl. 8:00, og jeg har noteret at du
+           skal have en lånebil. Vi ses! Farvel.
+         -> book({'slot_id': '20261001-0800', 'reg': 'XY 55 123', 'note': 'Lånebil ønskes'})
+
+  correct in 2 of 2 attempts (original: False)
+  live cost $0.086; the 6 turns before the fork cost nothing
+```
 
 ## As a gate
 

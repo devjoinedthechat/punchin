@@ -7,6 +7,7 @@ Exit codes: 0 success, 1 the run said no (a regression, a fork that did not fix 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import logging
 import shlex
@@ -20,15 +21,25 @@ from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
 from punchin.check import baseline_from, compare, load_baseline, report
 from punchin.customer import Customer, ScriptedCustomer
-from punchin.dms import TODAY, serve
+from punchin.dms import TODAY, normalize_reg, serve
 from punchin.fidelity import teacher_forced
 from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
+from punchin.importer import read_call, scenario_for
 from punchin.metrics import summarize
 from punchin.model import ClaudeCodeModel, Model, ModelDidNotRun
 from punchin.player import write as write_player
 from punchin.record import record
-from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario, vocabulary
+from punchin.scenarios import (
+    BY_ID,
+    SCENARIO_DIR,
+    SCENARIOS,
+    GoalState,
+    Scenario,
+    load_scenarios,
+    ungraded,
+    vocabulary,
+)
 
 DEFAULT_OUT = Path(".punchin/calls")
 
@@ -141,6 +152,18 @@ def model_for(args: argparse.Namespace) -> Model:
     return ClaudeCodeModel(model=args.model)
 
 
+def known_scenarios(args: argparse.Namespace) -> dict[str, Scenario]:
+    return load_scenarios(Path(getattr(args, "scenarios", SCENARIO_DIR)))
+
+
+def truth_for(known: dict[str, Scenario], call: Call, args: argparse.Namespace) -> Scenario:
+    """The outcome this call is graded against, or a sentence saying nobody has stated one."""
+    found = known.get(call.scenario)
+    if found is None:
+        raise SystemExit(ungraded(call.scenario, Path(getattr(args, "scenarios", SCENARIO_DIR))))
+    return found
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     model = model_for(args)
     for path in args.call:
@@ -148,8 +171,9 @@ def cmd_extract(args: argparse.Namespace) -> int:
         goal, cost = extract(call, model, TODAY)
         print(f"{call.id}  ${cost:.3f}")
         print(f"  {goal.model_dump_json(exclude_defaults=False)}")
-        if call.scenario in BY_ID:
-            print(f"  vs truth: {score(goal, BY_ID[call.scenario].goal)}")
+        known = known_scenarios(args)
+        if call.scenario in known:
+            print(f"  vs truth: {score(goal, known[call.scenario].goal)}")
     return 0
 
 
@@ -159,7 +183,7 @@ def cmd_fidelity(args: argparse.Namespace) -> int:
         call = Call.load(Path(path))
         goal: GoalState
         if args.goal == "truth":
-            goal = BY_ID[call.scenario].goal
+            goal = truth_for(known_scenarios(args), call, args).goal
         else:
             goal, _ = extract(call, model, TODAY)
         print(teacher_forced(call, goal, model).text())
@@ -183,7 +207,8 @@ HEARD_COLUMNS = ["reg_heard", "reg_survived", "lookup_attempts"]
 
 def cmd_metrics(args: argparse.Namespace) -> int:
     calls = [Call.load(Path(path)) for path in args.call]
-    rows = [summarize(call, BY_ID[call.scenario]) for call in calls]
+    known = known_scenarios(args)
+    rows = [summarize(call, truth_for(known, call, args)) for call in calls]
     if args.json:
         for row in rows:
             print(json.dumps(row, sort_keys=True, default=str))
@@ -200,7 +225,7 @@ def cmd_metrics(args: argparse.Namespace) -> int:
 def cmd_fork(args: argparse.Namespace) -> int:
     agent = agent_for(args)  # before any file is read, so a bad flag fails in a millisecond
     call = Call.load(Path(args.call))
-    scenario = BY_ID[call.scenario]
+    scenario = truth_for(known_scenarios(args), call, args)
     model = model_for(args)
     goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
     changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"agent {agent.name}"
@@ -227,7 +252,8 @@ def cmd_fork(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     calls = [Call.load(Path(path)) for path in args.call]
-    rows = [summarize(call, BY_ID[call.scenario]) for call in calls]
+    known = known_scenarios(args)
+    rows = [summarize(call, truth_for(known, call, args)) for call in calls]
     baseline_path = Path(args.baseline)
     if args.update:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +265,41 @@ def cmd_check(args: argparse.Namespace) -> int:
     found = compare(rows, load_baseline(baseline_path))
     print(report(found, len(rows)))
     return 1 if found else 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    source = Path(args.transcript)
+    call = read_call(source.read_text(), scenario_id=args.id, agent=args.agent)
+    day = dt.date.fromisoformat(args.day) if args.day else None
+    if args.booked and day is None:
+        raise SystemExit("--booked needs --day: a booking that happened has a day it happened on")
+    scenario = scenario_for(
+        call,
+        reg=args.reg,
+        day=day,
+        booked=args.booked,
+        why=args.why,
+        extras=list(args.extra or []),
+    )
+    if args.booked:
+        # What the call actually did, so a grader can tell a right booking from a wrong one.
+        call.bookings = [
+            {
+                "reg": normalize_reg(args.booked_reg or args.reg),
+                "date": (args.booked_day or args.day),
+                "time": args.booked_time,
+                "note": "",
+            }
+        ]
+
+    out, scenarios = Path(args.out), Path(args.scenarios)
+    scenarios.mkdir(parents=True, exist_ok=True)
+    written = call.save(out)
+    (scenarios / f"{scenario.id}.json").write_text(scenario.model_dump_json(indent=2) + "\n")
+    spoken = sum(1 for turn in call.turns if turn.speaker == "customer")
+    print(f"{written}  ({len(call.turns)} turns, {spoken} from the customer)")
+    print(f"{scenarios / f'{scenario.id}.json'}  the outcome it is graded against")
+    return 0
 
 
 def cmd_player(args: argparse.Namespace) -> int:
@@ -290,7 +351,16 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
     fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
     add_audio_flags(fk)
+    add_scenario_flag(fk)
     fk.set_defaults(run=cmd_fork)
+
+
+def add_scenario_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--scenarios",
+        default=str(SCENARIO_DIR),
+        help="directory of scenarios that outcomes are graded against, beside the built-in corpus",
+    )
 
 
 def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
@@ -301,7 +371,26 @@ def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
     met = commands.add_parser("metrics", parents=[common], help="outcome and feel numbers for recorded calls")
     met.add_argument("call", nargs="+")
     met.add_argument("--json", action="store_true", help="one JSON object per call, for a pipeline")
+    add_scenario_flag(met)
     met.set_defaults(run=cmd_metrics)
+
+    imp = commands.add_parser(
+        "import", parents=[common], help="turn somebody else's transcript into a recording"
+    )
+    imp.add_argument("transcript", help="JSON, JSONL, or lines like 'Agent: …' and 'Kunde: …'")
+    imp.add_argument("--id", required=True, help="a name for this call, used as its scenario id")
+    imp.add_argument("--reg", required=True, help="the registration the customer gave")
+    imp.add_argument("--day", default=None, help="the day the customer meant, YYYY-MM-DD")
+    imp.add_argument("--booked", action="store_true", help="a booking should have been made")
+    imp.add_argument("--booked-day", default=None, help="the day actually booked, if it differed")
+    imp.add_argument("--booked-reg", default=None, help="the plate actually booked, if it differed")
+    imp.add_argument("--booked-time", default="08:00")
+    imp.add_argument("--extra", action="append", help="something the workshop needed to know")
+    imp.add_argument("--why", default="", help="why this call is worth keeping")
+    imp.add_argument("--agent", default="imported", help="what to call the agent that made it")
+    imp.add_argument("--out", default=str(DEFAULT_OUT))
+    add_scenario_flag(imp)
+    imp.set_defaults(run=cmd_import)
 
     ply = commands.add_parser("player", parents=[common], help="one page that plays two calls side by side")
     ply.add_argument("before")
@@ -316,6 +405,7 @@ def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
     chk.add_argument("call", nargs="+")
     chk.add_argument("--baseline", default=str(DEFAULT_OUT.parent / "baseline.json"))
     chk.add_argument("--update", action="store_true", help="write the baseline from these calls instead")
+    add_scenario_flag(chk)
     chk.set_defaults(run=cmd_check)
 
 
@@ -329,6 +419,7 @@ def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
         sub.add_argument("--model", default="claude-sonnet-5")
         if name == "fidelity":
             sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+        add_scenario_flag(sub)
         sub.set_defaults(run=run)
 
     dms = commands.add_parser(

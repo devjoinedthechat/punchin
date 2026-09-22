@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -28,6 +29,7 @@ Pattern = Literal[
     "already_booked",
     "courtesy_car",
     "hurried",
+    "imported",  # a real call, with the outcome somebody stated after the fact
 ]
 
 WEEKDAYS = ["mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"]
@@ -75,7 +77,9 @@ class Scenario(BaseModel):
     pattern: Pattern
     vehicle: Vehicle
     goal: GoalState
-    script: list[Line]
+    # Empty for an imported call: its customer is pinned to an extracted goal, not read off a script.
+    # Such a scenario can be graded and forked, but not recorded from scratch.
+    script: list[Line] = []
     expected: Expected
     why: str = Field(description="What this scenario is built to catch")
 
@@ -295,6 +299,35 @@ SCENARIOS: list[Scenario] = [
 ]
 
 BY_ID: dict[str, Scenario] = {s.id: s for s in SCENARIOS}
+
+SCENARIO_DIR = Path(".punchin/scenarios")
+
+
+def load_scenarios(directory: Path | None = SCENARIO_DIR) -> dict[str, Scenario]:
+    """The built-in corpus, plus every `*.json` scenario in `directory`, which wins on a clash.
+
+    This is how a call punchin did not invent gets graded: `punchin import` writes the outcome somebody
+    says was right next to the recording, and everything downstream reads it from here.
+    """
+    known = dict(BY_ID)
+    if directory is None or not directory.is_dir():
+        return known
+    for path in sorted(directory.glob("*.json")):
+        try:
+            scenario = Scenario.model_validate_json(path.read_text())
+        except ValueError as bad:
+            raise ValueError(f"{path} is not a scenario: {bad}") from bad
+        known[scenario.id] = scenario
+    return known
+
+
+def ungraded(scenario_id: str, directory: Path | None) -> str:
+    """The sentence to print when a recording names an outcome nobody has stated."""
+    where = f" or in {directory}" if directory else ""
+    return (
+        f"no scenario {scenario_id!r} in the built-in corpus{where}, so there is nothing to grade this "
+        f"call against. `punchin import` writes one from the outcome you say was right."
+    )
 
 
 def spell_plate(reg: str) -> str:
