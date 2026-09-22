@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from punchin import __version__
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
@@ -19,6 +20,7 @@ from punchin.fork import Budget, agent_turns, fork
 from punchin.goal import extract, score
 from punchin.metrics import summarize
 from punchin.model import ClaudeCodeModel, Model, ModelDidNotRun
+from punchin.player import write as write_player
 from punchin.record import record
 from punchin.scenarios import BY_ID, SCENARIOS, GoalState, Scenario, vocabulary
 
@@ -220,9 +222,91 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if found else 0
 
 
+def cmd_player(args: argparse.Namespace) -> int:
+    before, after = Call.load(Path(args.before)), Call.load(Path(args.after))
+    dest = write_player(before, after, Path(args.out), title=args.title)
+    print(f"{dest}  ({dest.stat().st_size / 1e6:.1f} MB)")
+    return 0
+
+
 def cmd_dms(args: argparse.Namespace) -> int:
     serve(Path(args.state))
     return 0
+
+
+Commands = Any  # argparse's _SubParsersAction, which is private
+
+
+def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
+    commands.add_parser("scenarios", parents=[common], help="list the corpus").set_defaults(run=cmd_scenarios)
+
+    rec = commands.add_parser("record", parents=[common], help="record a scenario with an agent")
+    rec.add_argument("--scenario", default="all", help="a scenario id, or 'all'")
+    rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
+    rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
+    rec.add_argument("--out", default=str(DEFAULT_OUT))
+    add_audio_flags(rec)
+    rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
+    rec.set_defaults(run=cmd_record)
+
+    fk = commands.add_parser(
+        "fork", parents=[common], help="re-run a recorded call from one turn with the change applied"
+    )
+    fk.add_argument("call")
+    fk.add_argument("--at", type=int, required=True, help="the agent turn to fork at (see `punchin show`)")
+    fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
+    fk.add_argument("--system-suffix", default="", help="the prompt change under test")
+    fk.add_argument("--model", default="claude-sonnet-5")
+    fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+    fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
+    fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
+    add_audio_flags(fk)
+    fk.set_defaults(run=cmd_fork)
+
+
+def _add_reading(commands: Commands, common: argparse.ArgumentParser) -> None:
+    sh = commands.add_parser("show", parents=[common], help="print a recorded call")
+    sh.add_argument("call", nargs="+")
+    sh.set_defaults(run=cmd_show)
+
+    met = commands.add_parser("metrics", parents=[common], help="outcome and feel numbers for recorded calls")
+    met.add_argument("call", nargs="+")
+    met.add_argument("--json", action="store_true", help="one JSON object per call, for a pipeline")
+    met.set_defaults(run=cmd_metrics)
+
+    ply = commands.add_parser("player", parents=[common], help="one page that plays two calls side by side")
+    ply.add_argument("before")
+    ply.add_argument("after")
+    ply.add_argument("--out", default=".punchin/player.html")
+    ply.add_argument("--title", default=None)
+    ply.set_defaults(run=cmd_player)
+
+    chk = commands.add_parser(
+        "check", parents=[common], help="fail when a run is worse than the recorded baseline"
+    )
+    chk.add_argument("call", nargs="+")
+    chk.add_argument("--baseline", default=str(DEFAULT_OUT.parent / "baseline.json"))
+    chk.add_argument("--update", action="store_true", help="write the baseline from these calls instead")
+    chk.set_defaults(run=cmd_check)
+
+
+def _add_customer(commands: Commands, common: argparse.ArgumentParser) -> None:
+    for name, run, help_text in (
+        ("extract", cmd_extract, "read the customer's goal state out of recorded calls"),
+        ("fidelity", cmd_fidelity, "teacher-forced: does the pinned customer say what the real one said?"),
+    ):
+        sub = commands.add_parser(name, parents=[common], help=help_text)
+        sub.add_argument("call", nargs="+")
+        sub.add_argument("--model", default="claude-sonnet-5")
+        if name == "fidelity":
+            sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
+        sub.set_defaults(run=run)
+
+    dms = commands.add_parser(
+        "dms", parents=[common], help="the DMS as an MCP server over stdio (what the model calls)"
+    )
+    dms.add_argument("--state", required=True)
+    dms.set_defaults(run=cmd_dms)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -242,64 +326,9 @@ def parser() -> argparse.ArgumentParser:
     root.set_defaults(quiet=False)
     commands = root.add_subparsers(dest="command", required=True)
 
-    commands.add_parser("scenarios", help="list the corpus", parents=[common]).set_defaults(run=cmd_scenarios)
-
-    rec = commands.add_parser("record", parents=[common], help="record a scenario with an agent")
-    rec.add_argument("--scenario", default="all", help="a scenario id, or 'all'")
-    rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
-    rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
-    rec.add_argument("--out", default=str(DEFAULT_OUT))
-    add_audio_flags(rec)
-    rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
-    rec.set_defaults(run=cmd_record)
-
-    sh = commands.add_parser("show", parents=[common], help="print a recorded call")
-    sh.add_argument("call", nargs="+")
-    sh.set_defaults(run=cmd_show)
-
-    for name, run, help_text in (
-        ("extract", cmd_extract, "read the customer's goal state out of recorded calls"),
-        ("fidelity", cmd_fidelity, "teacher-forced: does the pinned customer say what the real one said?"),
-    ):
-        sub = commands.add_parser(name, parents=[common], help=help_text)
-        sub.add_argument("call", nargs="+")
-        sub.add_argument("--model", default="claude-sonnet-5")
-        if name == "fidelity":
-            sub.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
-        sub.set_defaults(run=run)
-
-    fk = commands.add_parser(
-        "fork", parents=[common], help="re-run a recorded call from one turn with the change applied"
-    )
-    fk.add_argument("call")
-    fk.add_argument("--at", type=int, required=True, help="the agent turn to fork at (see `punchin show`)")
-    fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
-    fk.add_argument("--system-suffix", default="", help="the prompt change under test")
-    fk.add_argument("--model", default="claude-sonnet-5")
-    fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
-    fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
-    fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))
-    add_audio_flags(fk)
-    fk.set_defaults(run=cmd_fork)
-
-    met = commands.add_parser("metrics", parents=[common], help="outcome and feel numbers for recorded calls")
-    met.add_argument("call", nargs="+")
-    met.add_argument("--json", action="store_true", help="one JSON object per call, for a pipeline")
-    met.set_defaults(run=cmd_metrics)
-
-    chk = commands.add_parser(
-        "check", parents=[common], help="fail when a run is worse than the recorded baseline"
-    )
-    chk.add_argument("call", nargs="+")
-    chk.add_argument("--baseline", default=str(DEFAULT_OUT.parent / "baseline.json"))
-    chk.add_argument("--update", action="store_true", help="write the baseline from these calls instead")
-    chk.set_defaults(run=cmd_check)
-
-    dms = commands.add_parser(
-        "dms", parents=[common], help="the DMS as an MCP server over stdio (what the model calls)"
-    )
-    dms.add_argument("--state", required=True)
-    dms.set_defaults(run=cmd_dms)
+    _add_recording(commands, common)
+    _add_reading(commands, common)
+    _add_customer(commands, common)
     return root
 
 

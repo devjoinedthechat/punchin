@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-62-brightgreen" alt="62 tests">
+  <img src="https://img.shields.io/badge/tests-69-brightgreen" alt="69 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -23,6 +23,7 @@
   <a href="#try-it">Try it</a> ·
   <a href="#why-this-is-hard">Why this is hard</a> ·
   <a href="#as-a-gate">As a gate</a> ·
+  <a href="#hearing-it">Player</a> ·
   <a href="#how-a-fork-works">How a fork works</a> ·
   <a href="#is-the-simulated-customer-the-real-one">Fidelity</a> ·
   <a href="#the-corpus">Corpus</a> ·
@@ -154,6 +155,19 @@ uv run punchin fork     .punchin/calls/<call>.json --at 6 --repeat 3 --system-su
 Each turn is one `claude -p` with every built-in tool off and the dealership system attached over MCP,
 in a scrubbed environment so the child inherits nothing from the session that launched it. Tool calls
 are read back out of its stream-json exactly as the model made them.
+
+## Hearing it
+
+A table says a call got worse. `punchin player` builds one page that plays both calls side by side,
+with the audio embedded, so it opens from disk and can be attached to a bug report without a server.
+
+```sh
+punchin player <before> <after> --out call.html
+```
+
+Turns served from the recording are dimmed and the fork point is marked, so it is obvious which part of
+the second call is the change and which part is the same conversation. Where a recogniser sat between
+the customer and the agent, both lines are shown: what she said, and under it what arrived.
 
 ## As a gate
 
