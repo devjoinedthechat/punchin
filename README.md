@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-48-brightgreen" alt="48 tests">
+  <img src="https://img.shields.io/badge/tests-49-brightgreen" alt="49 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
@@ -45,42 +45,61 @@ for**. The turns before the fork are served from the recording and cost nothing.
 
 ## The call
 
-An outbound Danish *syn* (MOT) reminder, recorded against a real model. The customer changes her mind
-mid-sentence, and the agent handles it — then reads her a menu of five times down the phone:
+An outbound Danish *syn* (MOT) reminder, spoken down a simulated phone line to a real model. The
+customer asks for Thursday morning. The recogniser hands the agent a fragment:
 
 ```
-   4 Agent Okay, jeg kan se din Škoda Octavia - synet udløber den 10. oktober. Hvornår kunne du komme forbi?
-         -> lookup_vehicle({'reg': 'AB 12 345'})
-   5 Kunde Kan jeg få en tid tirsdag? ...nej vent, onsdag. Onsdag er bedre.
-   6 Agent Super, onsdag har jeg ledigt klokken 8, halv ni, ti, ét eller halv tre. Passer et af de tidspunkter?
-         -> find_slots({'date_from': '2026-09-30', 'date_to': '2026-09-30'})
+   5 Kunde Torsdag formiddag ville være godt.
+      heard: 2. derform i dag ville være godt.
+   6 Agent Den 2. oktober har jeg ledigt klokken 8:00, 8:30, 10:00, 13:00 eller 14:30. Passer et af dem?
+         -> find_slots({'date_from': '2026-10-02', 'date_to': '2026-10-02'})
+  12 Agent Super, så er det booket! Din Toyota Yaris kommer til syn fredag den 2. oktober klokken 8:00.
+         -> book({'slot_id': '20261002-0800', 'reg': 'CD 67 890'})
+  13 Kunde Tak, hej hej.
 ```
 
-Every tool call succeeded and the right day was booked. No outcome check fires. But nobody holds five
-times in their head on a phone call, and the recording shows what it cost: she stalled, and the agent
-spent three more turns recovering.
+The model turned half a word into a plausible date and never questioned it. She wanted Thursday the 1st
+and is booked for Friday the 2nd. Every tool call succeeded, so no outcome check fires. The call ends
+politely with one stall and no repetition, so no quality metric fires either. Only the corpus, which
+knows which day she meant, can tell you this call failed.
 
-Fork at turn 6 with the fix:
+Fork at turn 6 with an instruction to read the day back before acting on it:
 
 ```sh
-punchin fork <call> --at 6 --repeat 3 \
-  --system-suffix "Tilbyd kun én tid ad gangen. Nævn aldrig flere klokkeslæt i samme replik."
+punchin fork <call> --at 6 --repeat 3 --audio --bias \
+  --system-suffix "Læs altid dagen tilbage til kunden med ugedag og dato, og få et ja, før du leder
+                   efter ledige tider. Gæt aldrig en dato ud fra noget, du kun delvist forstod."
+```
+
+The prefix is identical, so the agent is handed exactly the same mangled fragment — and this time
+refuses to guess:
+
+```
+   5 Kunde Torsdag formiddag ville være godt.
+      heard: 2. derform i dag ville være godt.          <- the same words, from the recording
+   6 Agent Undskyld, jeg er ikke helt sikker på, hvilken dag du mener - kan du sige ugedagen igen?
+   7 Kunde Øh nej undskyld, jeg mener den 1. oktober - altså torsdag.
+   8 Agent Så det er torsdag den 1. oktober, du gerne vil have bilen ind - er det rigtigt?
+   9 Kunde Ja, det er rigtigt, torsdag den 1. oktober.
+      heard: Ja, det er rigtigt, to steder den den første ude toper.
+  10 Agent Godt, jeg kan se der er ledigt kl. 8:00 den dag - passer det dig?
+         -> find_slots({'date_from': '2026-10-01', 'date_to': '2026-10-01'})
 ```
 
 ```
-fork of 20260922-000946-self-correction at turn 6
-  changed: system suffix 'Tilbyd kun én tid ad gangen. Nævn aldrig flere klokkeslæt i samme replik.'
-  original   correct=True   options_max=5  turns=10  agent_words_max=26  customer_stalls=0
-  attempt 1  correct=True   options_max=1  turns=10  agent_words_max=26  customer_stalls=0  live $0.053
-  attempt 2  correct=True   options_max=1  turns=12  agent_words_max=26  customer_stalls=0  live $0.062
-  attempt 3  correct=True   options_max=1  turns=10  agent_words_max=26  customer_stalls=0  live $0.036
-  correct in 3 of 3 attempts (original: True)
-  options_max: 5 -> 1 (median of attempts)
-  live cost $0.151; the 6 turns before the fork cost nothing
+  original   correct=False  options_max=5  turns=14  customer_stalls=1
+  attempt 1  correct=True   options_max=1  turns=14  customer_stalls=0  live $0.084
+  attempt 2  correct=True   options_max=1  turns=16  customer_stalls=0  live $0.086
+  attempt 3  correct=True   options_max=1  turns=14  customer_stalls=0  live $0.072
+  correct in 3 of 3 attempts (original: False)
+  live cost $0.241; the 6 turns before the fork cost nothing
 ```
 
-The conversation improved and the booking still landed. Turns 0–5 are byte for byte the ones she had,
-so nothing about the change is confounded by a different opening.
+Turn 9 is the part worth keeping. Her confirmation is mangled too — *"to steder den den første ude
+toper"* — and it does not matter, because by then the read-back only needs an answer shaped like yes,
+not an entity. A sentence that asks the customer to carry the information again is fragile; one that
+asks them to confirm it is not. That is a conversational property, not a technical one, and the only way
+to find it is to run the same broken audio past a changed agent.
 
 ## Why this is hard
 
@@ -241,34 +260,26 @@ not the digit.
 
 ### What the call survives
 
-The scripted agent reaches the right outcome on all ten scenarios in text. Once it has to listen, over a
-phone line with the call list passed to the decoder, three do. The plate is not the only thing lost:
+The scripted agent reaches the right outcome on all ten scenarios in text. Over a phone line, with the
+call list passed to the decoder, three of ten still do. Where the calls die is instructive, and the two
+agents fail differently.
 
-```
-   3 Kunde CD 67 890.
-      heard: CD 67 890                                   <- the plate arrives
-   4 Agent Tak, så er det din Toyota Yaris. Hvilken dag passer dig?
-         -> lookup_vehicle({'reg': 'CD67890'})
-   5 Kunde Torsdag formiddag ville være godt.
-      heard: 2. derform i dag ville være godt.           <- the day does not
-   6 Agent Hvilken dag passer dig bedst?
-```
+**The scripted agent has no fallback at all.** When a plate fails to resolve it asks for the plate
+again, in the same words, four or five times, and the customer hangs up. It never spells the plate back,
+never asks for the make instead, never offers a person. That is a missing path rather than a bad prompt,
+and it cannot appear in a text corpus, where the plate always arrives.
 
-Adding the weekdays to the decoder's vocabulary was the obvious fix, and it was measured and rejected:
-it cost two plates and did not rescue the day. The day is not an ASR vocabulary problem. It is a missing
-sentence in the conversation — *"onsdag den 30., er det rigtigt?"* — and that is an agent change, which
-is what `punchin fork` is for.
+**The model has a fallback, and the interesting failure is that it does not fire.** In the call above,
+sonnet-5 recovered gracefully when it mis-heard the *time* — *"Beklager, jeg hørte dig ikke helt
+tydeligt"* — and then silently invented a *date* from the same quality of audio. A half-heard time
+sounds like noise. A half-heard day still looks like a day, so nothing signals that anything was missed.
+Fallbacks trigger on confusion; this failure produces confidence.
 
-Two things fall out that text could not have shown.
-
-**The agent has no fallback.** It is optimal on the text corpus and helpless when an entity fails twice:
-it never spells the plate back, never asks for the make instead, never offers a person. The customer
-hears the same sentence four or five times and hangs up. That is a missing path rather than a bad
-prompt, and it only appears once something can go wrong between a mouth and a tool call.
-
-**Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True`, because
-the right outcome there is no booking and the call collapsed before making one. The feel columns are the
-only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`, `ended_by=customer`.
+**Outcome checking scores a disaster as a pass.** `already-booked` comes back `correct=True` over a
+phone line, because the right outcome there is no booking and the call collapsed before making one. The
+feel columns are the only thing that disagrees: `agent_repeats=5`, `customer_stalls=3`,
+`ended_by=customer`. The inverse of the headline call, where the feel columns were clean and the outcome
+was wrong. Neither kind of check finds both.
 
 ## What it does not do
 
