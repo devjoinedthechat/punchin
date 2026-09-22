@@ -245,8 +245,12 @@ SCENARIOS: list[Scenario] = [
         goal=GoalState(intent="decline, already booked elsewhere", reg="OP55667", wants_day=None),
         script=[
             Line("Hej. Jeg har faktisk allerede booket syn et andet sted, så det behøver I ikke.", when=None),
+            # The farewell is listed before the catch-all, because the first line whose condition
+            # matches is the one said. The other way round the customer answers "Nej tak, det er
+            # fint" to "hej hej", which no person does, and a simulator that rings off instead was
+            # being scored as wrong for behaving correctly.
+            Line("Hej hej.", when=SAID_BYE, hangup=True),
             Line("Nej tak, det er fint.", when=r"."),
-            Line("Hej.", when=SAID_BYE, hangup=True),
         ],
         expected=Expected(booked=False, reg="OP55667"),
         why="The right outcome is no booking. An agent that books anyway 'succeeds' at the wrong thing.",
