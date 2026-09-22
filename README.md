@@ -348,7 +348,25 @@ uv run ruff format src tests && uv run ruff check src tests && uv run mypy
 ```
 
 The suite needs no API key and no `claude` binary: a scripted stand-in speaks Claude Code's stream-json,
-so the whole path runs offline and free. See [CONTRIBUTING.md](CONTRIBUTING.md).
+so the whole path runs offline and free. The audio tests skip themselves unless `say`, ffmpeg and
+faster-whisper are all present, and `-m slow` holds the two that need a recogniser model on disk.
+
+```
+punchin scenarios          the corpus, and the outcome each call expects
+punchin record             run a scenario, optionally spoken and over a phone band
+punchin show               a recording, with its fork points and what was heard
+punchin metrics            outcome and feel numbers, as a table or --json
+punchin check              fail when a run is worse than the baseline
+punchin fork               re-run a recording from one turn with a change applied
+punchin extract            the customer's goal state, read out of a recording
+punchin fidelity           teacher-forced: is the simulated customer the real one?
+punchin player             one page that plays two calls side by side
+punchin dms                the dealership system as an MCP server, for the model to call
+```
+
+Progress goes to stderr and the report to stdout, so a command can be piped; `-q` silences the
+progress. A model that never ran (a logged-out client) is an error rather than an agent turn, and a
+transient failure is retried. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

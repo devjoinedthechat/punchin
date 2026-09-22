@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
 
 from punchin import __version__
+from punchin.adapter import CommandAgent
 from punchin.agent import Agent, ModelAgent, ScriptedAgent
 from punchin.call import Call
 from punchin.check import baseline_from, compare, load_baseline, report
@@ -38,13 +40,19 @@ def add_audio_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def agent_for(name: str, model: str) -> Agent:
+def agent_for(args: argparse.Namespace) -> Agent:
+    """The agent under test. `command` is the one that matters: anybody else's."""
+    name = args.agent
     if name == "careful":
         return ScriptedAgent(careful=True)
     if name == "careless":
         return ScriptedAgent(careful=False)
     if name == "claude-code":
-        return ModelAgent(ClaudeCodeModel(model=model), TODAY)
+        return ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
+    if name == "command":
+        if not args.agent_command:
+            raise SystemExit('--agent command needs --agent-command "..."')
+        return CommandAgent(shlex.split(args.agent_command), TODAY)
     raise SystemExit(f"unknown agent {name!r}")
 
 
@@ -104,7 +112,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     state = out / ".dms-state.json"
     for scenario in chosen:
-        agent = agent_for(args.agent, args.model)
+        agent = agent_for(args)
         call = record(scenario, agent, customer_for(args, scenario, out), state, out)
         print(show(call))
         print()
@@ -183,8 +191,8 @@ def cmd_fork(args: argparse.Namespace) -> int:
     scenario = BY_ID[call.scenario]
     model = model_for(args)
     goal = scenario.goal if args.goal == "truth" else extract(call, model, TODAY)[0]
-    agent = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
-    changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"model {args.model}"
+    agent = agent_for(args)
+    changed = f"system suffix {args.system_suffix!r}" if args.system_suffix else f"agent {agent.name}"
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     report = fork(
@@ -242,8 +250,14 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
 
     rec = commands.add_parser("record", parents=[common], help="record a scenario with an agent")
     rec.add_argument("--scenario", default="all", help="a scenario id, or 'all'")
-    rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code"])
+    rec.add_argument("--agent", default="careful", choices=["careful", "careless", "claude-code", "command"])
     rec.add_argument("--model", default="claude-sonnet-5", help="model for --agent claude-code")
+    rec.add_argument(
+        "--agent-command",
+        default="",
+        help='your own agent, over JSON: --agent command --agent-command "python agent.py"',
+    )
+    rec.add_argument("--system-suffix", default="", help="appended to --agent claude-code's prompt")
     rec.add_argument("--out", default=str(DEFAULT_OUT))
     add_audio_flags(rec)
     rec.add_argument("--snr-db", type=float, default=None, help="mix in car noise at this SNR")
@@ -257,6 +271,10 @@ def _add_recording(commands: Commands, common: argparse.ArgumentParser) -> None:
     fk.add_argument("--repeat", type=int, default=1, help="attempts, because both sides are stochastic")
     fk.add_argument("--system-suffix", default="", help="the prompt change under test")
     fk.add_argument("--model", default="claude-sonnet-5")
+    fk.add_argument(
+        "--agent", default="claude-code", choices=["careful", "careless", "claude-code", "command"]
+    )
+    fk.add_argument("--agent-command", default="", help="your own agent, for --agent command")
     fk.add_argument("--goal", default="extracted", choices=["extracted", "truth"])
     fk.add_argument("--max-usd", type=float, default=2.0, help="stop starting attempts once this is spent")
     fk.add_argument("--out", default=str(DEFAULT_OUT.parent / "forks"))

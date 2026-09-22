@@ -48,3 +48,16 @@ jobs:
       # The gate the tool exists to be. The committed baseline is what the careful agent achieves, so
       # any change that makes a call worse fails the build and names the scenario.
       - run: uv run punchin check .punchin/ci/*.json --baseline baseline.json -q
+
+  adapter:
+    # The documented contract, exercised by the example that documents it. If the protocol drifts, the
+    # example stops working, and somebody else's agent would have stopped working too.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - run: uv run punchin record --agent command
+             --agent-command "uv run python examples/rule_agent.py"
+             --out .punchin/byo -q
+      - run: uv run punchin check .punchin/byo/*.json --baseline baseline.json -q
