@@ -39,3 +39,13 @@ def test_scoring_against_the_truth() -> None:
     assert score(wrong, GOAL)["day"] is False
     assert score(wrong, GOAL)["reg"] is False
     assert isinstance(GOAL.wants_day, dt.date)
+
+
+def test_a_polite_refusal_is_a_refusal_and_not_also_an_agreement() -> None:
+    """ "Nej tak, det er fint" is one thing. Tagging it as both was costing a real call half its score."""
+    assert facts(GOAL, "Nej tak, det er fint.") == {"no"}
+    assert facts(GOAL, "Ja, det er fint.") == {"yes"}
+    assert facts(GOAL, "Nej.") == {"no"}
+    assert facts(GOAL, "Fint.") == {"yes"}
+    # whichever came first is what the line is doing
+    assert facts(GOAL, "Ja, men ikke i denne uge.") == {"yes", "next_week"}

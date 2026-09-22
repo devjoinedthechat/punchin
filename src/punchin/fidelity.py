@@ -61,8 +61,8 @@ class Report:
 
     def one_line(self) -> str:
         return (
-            f"  {self.call[-46:]:46} jaccard {self.mean_jaccard:.2f}  exact {self.exact_rate:.0%}"
-            f"  length x{self.mean_length_ratio:.2f}  ${self.cost_usd:.3f}"
+            f"  {self.call[-42:]:42} jaccard {self.mean_jaccard:.2f}  exact {self.exact_rate:.0%}"
+            f"  length x{self.mean_length_ratio:.2f}  over {len(self.turns)} turns  ${self.cost_usd:.3f}"
         )
 
     def text(self) -> str:
@@ -123,11 +123,17 @@ class Repeated:
     def cost_usd(self) -> float:
         return sum(run.cost_usd for run in self.runs)
 
+    @property
+    def turns(self) -> int:
+        """Customer turns each run scored. A handful of them quantises the whole measurement."""
+        return len(self.runs[0].turns) if self.runs else 0
+
     def one_line(self, label: str = "") -> str:
-        name = label or self.call[-40:]
+        name = label or self.call[-36:]
         each = " ".join(f"{score:.2f}" for score in self.scores)
         return (
-            f"  {name:40} jaccard {self.mean:.2f}  spread {self.spread:.2f}  ({each})  ${self.cost_usd:.3f}"
+            f"  {name:36} jaccard {self.mean:.2f}  spread {self.spread:.2f}  ({each})"
+            f"  over {self.turns} turns  ${self.cost_usd:.3f}"
         )
 
 
@@ -154,17 +160,34 @@ def teacher_forced(call: Call, goal: GoalState, model: Model) -> Report:
 
 
 def across(reports: Sequence[Report]) -> str:
-    """The spread over several calls. One call is an anecdote; this is the number worth quoting."""
+    """The spread over several calls. One call is an anecdote; this is the number worth quoting.
+
+    Reported per turn rather than per call. Averaging the calls' averages gives a two-turn call the
+    same weight as a ten-turn one, and a two-turn call's score is a coin flip on whether one keyword
+    fired — it moves in steps of 0.50 and carries almost no information. Pooling the turns weights
+    each call by how much it actually measured.
+    """
     if not reports:
         return "no calls measured"
     scores = sorted(report.mean_jaccard for report in reports)
-    turns = sum(len(report.turns) for report in reports)
+    every_turn = [turn.jaccard for report in reports for turn in report.turns]
+    turns = len(every_turn)
     spent = sum(report.cost_usd for report in reports)
-    exact = mean(report.exact_rate for report in reports)
+    exact = mean(turn.exact for report in reports for turn in report.turns) if turns else 0.0
+    shortest = min(len(report.turns) for report in reports)
+    note = (
+        f"\n  The shortest call scored {shortest} turns, so its per-call number moves in steps of "
+        f"{1 / shortest:.2f} and is close to a coin flip. That is why the pooled figure is the one to "
+        f"read."
+        if shortest <= 4
+        else ""
+    )
     return (
-        f"\n{len(reports)} calls, {turns} customer turns: "
-        f"jaccard mean {mean(scores):.2f}, median {median(scores):.2f}, "
-        f"range {scores[0]:.2f}-{scores[-1]:.2f}; exact {exact:.0%}; ${spent:.3f}"
+        f"\n{len(reports)} calls, {turns} customer turns"
+        f"\n  per turn (pooled): jaccard {mean(every_turn):.2f}, exact {exact:.0%}"
+        f"\n  per call:          mean {mean(scores):.2f}, median {median(scores):.2f}, "
+        f"range {scores[0]:.2f}-{scores[-1]:.2f}"
+        f"\n  ${spent:.3f}{note}"
     )
 
 

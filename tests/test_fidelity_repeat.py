@@ -146,3 +146,43 @@ def test_a_field_that_changes_nothing_is_not_distinguishable_from_zero() -> None
     assert middle == pytest.approx(0.0)
     assert "not distinguishable from zero" in found.text()
     assert "paired" in found.text().lower()
+
+
+def test_the_corpus_number_is_pooled_by_turn_not_averaged_over_calls() -> None:
+    """A two-turn call and a ten-turn call must not weigh the same: one measured five times as much."""
+    from punchin.fidelity import across
+
+    class FakeTurn:
+        def __init__(self, score: float) -> None:
+            self.jaccard, self.exact = score, score == 1.0
+
+    class FakeReport:
+        def __init__(self, scores: list[float]) -> None:
+            self.turns = [FakeTurn(s) for s in scores]
+            self.mean_jaccard = sum(scores) / len(scores)
+            self.exact_rate = sum(s == 1.0 for s in scores) / len(scores)
+            self.cost_usd = 0.0
+
+    short = FakeReport([0.0, 0.0])  # a two-turn call that scored badly
+    long = FakeReport([1.0] * 10)  # a ten-turn call that scored perfectly
+    printed = across([short, long])  # type: ignore[list-item]
+
+    assert "12 customer turns" in printed
+    assert "jaccard 0.83" in printed  # pooled: 10 of 12 turns were right
+    assert "mean 0.50" in printed  # per call: the two calls averaged, which is the misleading one
+    assert "coin flip" in printed  # and it says why
+
+
+def test_a_corpus_of_long_calls_gets_no_warning() -> None:
+    from punchin.fidelity import across
+
+    class FakeTurn:
+        def __init__(self) -> None:
+            self.jaccard, self.exact = 0.8, False
+
+    class FakeReport:
+        def __init__(self) -> None:
+            self.turns = [FakeTurn() for _ in range(8)]
+            self.mean_jaccard, self.exact_rate, self.cost_usd = 0.8, 0.0, 0.0
+
+    assert "coin flip" not in across([FakeReport(), FakeReport()])  # type: ignore[list-item]

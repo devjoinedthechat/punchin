@@ -123,9 +123,14 @@ def facts(goal: GoalState, text: str) -> set[str]:
             words = [w for w in re.findall(r"\w+", item.lower()) if len(w) >= 4]
             if words and any(w in text.lower() for w in words):
                 found.add(f"{kind}:{item}")
-    if YES.search(text):
+    agreed, refused = YES.search(text), NO.search(text)
+    if agreed and refused:
+        # "Nej tak, det er fint" is a refusal, not an agreement and a refusal. Whichever came first is
+        # what the line is doing; the rest is politeness wrapped around it.
+        found.add("no" if refused.start() < agreed.start() else "yes")
+    elif agreed:
         found.add("yes")
-    if NO.search(text):
+    elif refused:
         found.add("no")
     if BYE.search(text):
         found.add("bye")
