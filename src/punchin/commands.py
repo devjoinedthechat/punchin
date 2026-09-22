@@ -322,7 +322,9 @@ def cmd_soundness(args: argparse.Namespace) -> int:
         chosen = [known[args.scenario]]
     else:
         raise SystemExit(ungraded(args.scenario, Path(args.scenarios)))
-    model = model_for(args)
+    # Flags are checked before anything is built. Constructing the model first made a missing
+    # --baseline-command report a missing `claude` binary, which is a true sentence about the wrong
+    # problem — and only on a machine that has no Claude Code, which is not the one this was written on.
     if args.agent == "command":
         # Somebody else's agent, where the change is a different command rather than a prompt.
         if not (args.agent_command and args.baseline_command):
@@ -333,15 +335,18 @@ def cmd_soundness(args: argparse.Namespace) -> int:
         changed: Agent = CommandAgent(shlex.split(args.agent_command), TODAY, name="command:changed")
         plain: Agent = CommandAgent(shlex.split(args.baseline_command), TODAY, name="command:baseline")
         change = args.agent_command
+    elif not args.system_suffix:
+        raise SystemExit(
+            "--system-suffix is the change whose fork is being checked; it is required, "
+            "unless you are checking your own agent with --agent command"
+        )
     else:
-        if not args.system_suffix:
-            raise SystemExit(
-                "--system-suffix is the change whose fork is being checked; it is required, "
-                "unless you are checking your own agent with --agent command"
-            )
         changed = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.system_suffix)
         plain = ModelAgent(ClaudeCodeModel(model=args.model), TODAY, system_suffix=args.baseline_suffix)
         change = args.system_suffix
+
+    # The pinned customer needs a model even when both agents are somebody else's.
+    model = model_for(args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     budget = Budget(args.max_usd)

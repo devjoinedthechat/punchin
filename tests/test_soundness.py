@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -217,28 +218,27 @@ def test_soundness_can_be_run_on_an_agent_punchin_does_not_own(
     assert str(after) in printed  # the change under test is named
 
 
-def test_an_external_agent_needs_both_sides_of_the_comparison(tmp_path: Path) -> None:
+def test_a_missing_flag_is_reported_before_anything_is_built(tmp_path: Path) -> None:
+    """Building the model first made a missing flag report a missing `claude` binary: a true sentence
+    about the wrong problem, and only on a machine without Claude Code — never the one it was written on.
+    """
     from punchin.cli import main
 
-    with pytest.raises(SystemExit, match="needs both"):
-        main(
-            [
-                "soundness",
-                "--scenario",
-                "self-correction",
-                "--agent",
-                "command",
-                "--agent-command",
-                "echo",
-                "--out",
-                str(tmp_path),
-                "-q",
-            ]
-        )
-
-
-def test_a_prompt_change_is_required_when_the_agent_is_punchins_own(tmp_path: Path) -> None:
-    from punchin.cli import main
-
-    with pytest.raises(SystemExit, match="--system-suffix"):
-        main(["soundness", "--scenario", "self-correction", "--out", str(tmp_path), "-q"])
+    with patch("punchin.model.find_claude", return_value=None):
+        with pytest.raises(SystemExit, match="needs both"):
+            main(
+                [
+                    "soundness",
+                    "--scenario",
+                    "self-correction",
+                    "--agent",
+                    "command",
+                    "--agent-command",
+                    "echo",
+                    "--out",
+                    str(tmp_path),
+                    "-q",
+                ]
+            )
+        with pytest.raises(SystemExit, match="--system-suffix"):
+            main(["soundness", "--scenario", "self-correction", "--out", str(tmp_path), "-q"])
