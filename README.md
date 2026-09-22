@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python 3.11–3.13">
-  <img src="https://img.shields.io/badge/tests-144-brightgreen" alt="144 tests">
+  <img src="https://img.shields.io/badge/tests-147-brightgreen" alt="147 tests">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0">
   <img src="https://img.shields.io/badge/status-pre--alpha-orange" alt="Status: pre-alpha">
 </p>
