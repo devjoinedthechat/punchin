@@ -170,3 +170,29 @@ def test_checking_without_a_baseline_says_how_to_make_one(tmp_path: Path) -> Non
     recorded = [str(p) for p in calls.glob("2026*.json")]
     with pytest.raises(SystemExit, match="--update"):
         main(["check", *recorded, "--baseline", str(tmp_path / "nope.json"), "-q"])
+
+
+def test_one_unlucky_run_does_not_fail_a_build_but_a_consistent_one_does() -> None:
+    """Numbers are compared on their median, so a single slow call is absorbed and a trend is not."""
+    was = baseline_from([{"scenario": "a", "turns": 10}])
+    one_slow = [
+        {"scenario": "a", "turns": 10},
+        {"scenario": "a", "turns": 10},
+        {"scenario": "a", "turns": 40},
+    ]
+    assert compare(one_slow, was) == []
+
+    all_slow = [{"scenario": "a", "turns": 40} for _ in range(3)]
+    assert [r.detail for r in compare(all_slow, was)] == ["turns: 10 -> 40"]
+
+
+def test_an_outcome_that_used_to_be_certain_and_is_now_usual_has_regressed() -> None:
+    was = baseline_from([{"scenario": "a", "correct": True}])
+    sometimes = [
+        {"scenario": "a", "correct": True},
+        {"scenario": "a", "correct": False},
+        {"scenario": "a", "correct": True},
+    ]
+    assert [r.detail for r in compare(sometimes, was)] == ["correct: 100% -> 67% of runs"]
+    # and the other way round is an improvement, not a regression
+    assert compare([{"scenario": "a", "correct": True}], baseline_from(sometimes)) == []
