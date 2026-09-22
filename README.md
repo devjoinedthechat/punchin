@@ -207,22 +207,25 @@ object per line, or a plain `Agent:` / `Kunde:` transcript — and writes a reco
 It also asks for something no transcript contains: **what should have happened.**
 
 ```sh
-punchin import dealer-1482.txt --id dealer-1482 \
+punchin import examples/dealer-1482.txt --id dealer-1482 \
   --reg "XY 55 123" --day 2026-10-01 --booked --booked-day 2026-10-02 --extra "lånebil"
 ```
 
 ```
-.punchin/calls/20260922-051808-dealer-1482-imported.json  (9 turns, 4 from the customer)
+.punchin/calls/20260922-164400-70785d57-dealer-1482-imported.json  (9 turns, 4 from the customer)
 .punchin/scenarios/dealer-1482.json  the outcome it is graded against
 ```
+
+That transcript ships with the repository, and it is the one CI imports, so the command above is a
+command rather than an illustration.
 
 That second file is the point. No amount of parsing recovers the day the customer meant; somebody has
 to say it, once. From then on the call grades, gates and forks exactly like one punchin recorded, and
 `--scenarios` is how every command finds the outcomes you have stated.
 
 ```
-        scenario           correct            day_ok             turns     agent_repeats
-     dealer-1482             False             False                 9                 1
+        scenario           correct            day_ok             turns     agent_repeats   customer_stalls
+     dealer-1482             False             False                 9                 1                 0
 ```
 
 She said *torsdag*; it booked Friday the 2nd. Nine turns, no repetition, no stalls, a polite goodbye —

@@ -2,6 +2,9 @@
 
 Run in CI. If importing breaks, an archive stops being usable, and nothing else in the suite notices:
 every other test starts from a recording punchin made itself.
+
+The transcript is `examples/dealer-1482.txt`, the same file the README tells a reader to import, so the
+documented command and the one CI runs cannot drift apart.
 """
 
 from __future__ import annotations
@@ -15,24 +18,14 @@ from punchin.cli import main
 from punchin.metrics import summarize
 from punchin.scenarios import load_scenarios
 
-TRANSCRIPT = """\
-Agent: Hej, det er Sofie fra værkstedet. Synet udløber snart. Passer det nu?
-Kunde: Ja, det er fint.
-Agent: Må jeg få nummerpladen?
-Kunde: Det er XY 55 123.
-Agent: Hvilken dag passer dig?
-Kunde: Torsdag, tak. Og jeg skal have en lånebil.
-Agent: Jeg har en tid fredag den 2. oktober klokken 8. Skal jeg booke den?
-Kunde: Ja tak.
-Agent: Så er den booket. Hej hej.
-"""
+TRANSCRIPT = Path(__file__).resolve().parent.parent / "examples" / "dealer-1482.txt"
 
 
 def run() -> int:
     with tempfile.TemporaryDirectory(prefix="punchin-import-smoke-") as workspace:
         root = Path(workspace)
         source = root / "call.txt"
-        source.write_text(TRANSCRIPT)
+        source.write_text(TRANSCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
         calls, scenarios = root / "calls", root / "scenarios"
 
         imported = main(
@@ -40,7 +33,7 @@ def run() -> int:
                 "import",
                 str(source),
                 "--id",
-                "ci-import",
+                "dealer-1482",
                 "--reg",
                 "XY 55 123",
                 "--day",
@@ -62,7 +55,7 @@ def run() -> int:
             return 1
 
         call = Call.load(next(calls.glob("2026*.json")))
-        row = summarize(call, load_scenarios(scenarios)["ci-import"])
+        row = summarize(call, load_scenarios(scenarios)["dealer-1482"])
         checks = {
             "nine turns read": len(call.turns) == 9,
             "the plate reached the scenario": row["reg_ok"] is True,

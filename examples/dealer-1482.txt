@@ -1,0 +1,9 @@
+Agent: Hej, det er Sofie fra værkstedet. Synet udløber snart. Passer det nu?
+Kunde: Ja, det er fint.
+Agent: Må jeg få nummerpladen?
+Kunde: Det er XY 55 123.
+Agent: Hvilken dag passer dig?
+Kunde: Torsdag, tak. Og jeg skal have en lånebil.
+Agent: Jeg har en tid fredag den 2. oktober klokken 8. Skal jeg booke den?
+Kunde: Ja tak.
+Agent: Så er den booket. Hej hej.
